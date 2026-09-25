@@ -1,0 +1,447 @@
+---
+title: "Protected Species Interactions — Hawaii Longline Fisheries"
+subtitle: "Automated SAFE Report Section (Pelagic FEP §3.3.2) and Decision-Support Feed"
+author: "SAFE Automation Working Group"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+    theme: cosmo
+    code-fold: true
+  docx:
+    toc: true
+    reference-doc: safe_reference.docx   # optional; remove if not present
+params:
+  use_mock: true                      # TRUE = SQLite test DB; FALSE = LOTUS via odbc
+  sqlite_path: "../data/ps_monitoring_test.sqlite"
+  current_year: 2025
+  alpha: 0.05                         # Bayesian gate significance
+  robust_threshold: 2                 # MAD-z gate
+  percentile_threshold: 90            # rank-percentile gate
+  use_llm: false                      # TRUE = call Gemini for narrative drafts
+  llm_model: "gemini-2.5-pro"
+  llm_endpoint: "https://generativelanguage.googleapis.com/v1beta"  # replace with agency-approved (e.g. Vertex AI) endpoint
+  export_json: "../data/pipeline_output.json"
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+suppressPackageStartupMessages({
+  library(DBI); library(dplyr); library(tidyr); library(purrr); library(gt); library(ggplot2); library(jsonlite)
+})
+source("R/ps_functions.R")
+CUR   <- params$current_year
+ALPHA <- params$alpha
+con   <- ps_connect(use_mock = params$use_mock, sqlite_path = params$sqlite_path)
+on.exit(DBI::dbDisconnect(con), add = TRUE)
+
+species <- ps_read(con, "species", params$use_mock)
+ann     <- ps_read(con, "interactions", params$use_mock)
+effort  <- ps_read(con, "effort", params$use_mock)
+spatial <- ps_read(con, "spatial", params$use_mock)
+ocean   <- ps_read(con, "ocean", params$use_mock)
+its_ref <- ps_read(con, "its", params$use_mock)
+```
+
+::: {.callout-note collapse="true"}
+## Data provenance and confidentiality
+This document reads **aggregated** tables only (species × year, species × year × stratum). In production
+these are LOTUS views maintained by PIFSC; in test mode (`params$use_mock = TRUE`) they come from
+`ps_monitoring_test.sqlite`, a synthetic database calibrated to `ps_monitoring_tables_AI.xlsx`.
+No set-level or vessel-level PIROP observer records are read, cached, or sent to any external service.
+Mode for this render: **`r if (params$use_mock) "TEST (SQLite)" else "PRODUCTION (LOTUS)"`**.
+:::
+
+## 1. Interactions summary (Table 2)
+
+```{r table2}
+eff_by_year <- effort |> select(year, observed_sets, coverage_rate)
+
+per_species <- ann |>
+  left_join(eff_by_year, by = "year") |>
+  mutate(rate_per_set = interactions / observed_sets) |>
+  group_by(species_code) |>
+  group_map(~ {
+    d <- arrange(.x, year); h <- filter(d, year < CUR); c <- filter(d, year == CUR)
+    pr <- gamma_poisson_prior(h$interactions)
+    p_tail <- nb_tail_prob(pr[["shape"]], pr[["rate"]], c$interactions)
+    qs <- nb_quantiles(pr[["shape"]], pr[["rate"]])
+    ra <- mad_z(h$interactions, c$interactions); pct <- percentile_rank(h$interactions, c$interactions)
+    gate <- or_gate(ra, pct, p_tail, ALPHA, params$robust_threshold, params$percentile_threshold)
+    ts <- theil_sen(h$year, h$interactions)
+    tibble(species_code = .y$species_code, year = CUR, current = c$interactions,
+           mean = mean(h$interactions), median = median(h$interactions),
+           p10 = quantile(h$interactions, .1), p90 = quantile(h$interactions, .9),
+           percentile = pct, robust_anomaly = ra, n_years = nrow(h), trend_slope = ts,
+           trend = ifelse(ts > 0, "Increasing", ifelse(ts < 0, "Decreasing", "Flat")),
+           flag = gate$flag, gate_robust = gate$gates[["robust"]], gate_percentile = gate$gates[["percentile"]],
+           gate_bayes = gate$gates[["bayes"]],
+           prior_shape = pr[["shape"]], prior_rate = pr[["rate"]], p_tail = p_tail,
+           pred_q05 = qs[1], pred_median = qs[2], pred_q95 = qs[3],
+           rate_cur = c$rate_per_set, rate_hist = list(h$rate_per_set))
+  }) |> bind_rows() |> left_join(select(species, species_code, common, group, sector), by = "species_code")
+
+table2 <- per_species |>
+  select(Species = common, Current = current, Mean = mean, Median = median, P10 = p10, P90 = p90,
+         Percentile = percentile, `Robust Anomaly` = robust_anomaly, `N Years` = n_years,
+         `Trend Slope` = trend_slope, Trend = trend, Flag = flag)
+
+table2 |> gt() |>
+  tab_header(title = md("**Table 2.** Observed protected-species interactions, current year vs. historical distribution")) |>
+  fmt_number(columns = c(Mean, P10, P90, `Trend Slope`), decimals = 1) |>
+  fmt_number(columns = c(Percentile), decimals = 0) |>
+  fmt_number(columns = `Robust Anomaly`, decimals = 2, force_sign = TRUE) |>
+  data_color(columns = Flag, fn = function(x) case_when(x == "High" ~ "#F18F01", x == "Low" ~ "#1C7293", TRUE ~ "#F4F6F8")) |>
+  tab_source_note(sprintf("Flag = OR gate: robust anomaly ≥ %s, or percentile ≥ %s, or Bayesian tail probability < %s.",
+                          params$robust_threshold, params$percentile_threshold, ALPHA))
+```
+
+## 2. Interaction rate, trend and spatial shift (Table 2b)
+
+```{r table2b}
+table2b <- per_species |>
+  rowwise() |>
+  mutate(tw = ifelse(group == "Sea turtle", 10, 5)) |>
+  ungroup() |>
+  mutate(trend_fit = map2(species_code, tw, ~ {
+    d <- ann |> filter(species_code == .x, year >= CUR - .y + 1) |> left_join(eff_by_year, by = "year")
+    fit_trend(d$year, d$interactions, d$observed_sets)
+  })) |>
+  mutate(annual_pct_change = map_dbl(trend_fit, "annual_pct_change"),
+         trend_model = map_chr(trend_fit, "model"), trend_model_flag = map_chr(trend_fit, "model_flag"),
+         rate_robust_anomaly = map2_dbl(rate_hist, rate_cur, ~ mad_z(.x, .y)),
+         rate_percentile = map2_dbl(rate_hist, rate_cur, ~ percentile_rank(.x, .y)),
+         hist_mean_rate = map_dbl(rate_hist, mean), hist_median_rate = map_dbl(rate_hist, median),
+         hist_p90_rate = map_dbl(rate_hist, ~ quantile(.x, .9))) |>
+  left_join(
+    spatial |> group_by(species_code) |>
+      summarise(hist_lon = mean(centroid_lon[year < CUR]), hist_lat = mean(centroid_lat[year < CUR]),
+                cur_lon = centroid_lon[year == CUR], cur_lat = centroid_lat[year == CUR],
+                pct_outside_hist90 = pct_outside_hist90[year == CUR], .groups = "drop") |>
+      mutate(centroid_shift_km = haversine_km(hist_lon, hist_lat, cur_lon, cur_lat)),
+    by = "species_code")
+
+table2b |>
+  transmute(Species = common, `Current Interactions` = current, `Current Rate` = rate_cur,
+            `Historical Median Rate` = hist_median_rate, `Historical P90 Rate` = hist_p90_rate,
+            `Rate Percentile` = rate_percentile, `Rate Robust Anomaly` = rate_robust_anomaly,
+            `Annual % Change` = annual_pct_change, `Trend Model` = trend_model, `Model Flag` = trend_model_flag,
+            `Trend Years` = tw, `Centroid Shift (km)` = centroid_shift_km, `% Outside Hist. 90%` = pct_outside_hist90) |>
+  gt() |>
+  tab_header(title = md("**Table 2b.** Interaction rate (per observed set), trend model and centroid shift")) |>
+  fmt_number(columns = c(`Current Rate`, `Historical Median Rate`, `Historical P90 Rate`), decimals = 4) |>
+  fmt_number(columns = c(`Rate Robust Anomaly`, `Annual % Change`, `Centroid Shift (km)`, `% Outside Hist. 90%`), decimals = 1)
+```
+
+## 3. Ocean and habitat context (Table 2c)
+
+```{r table2c}
+table2c <- ocean |>
+  group_by(species_code, variable) |>
+  summarise(
+    current_interaction_env = interaction_env[year == CUR],
+    hist_interaction_median = median(interaction_env[year < CUR]),
+    current_fleet_env = fleet_env[year == CUR],
+    current_selection_anomaly = current_interaction_env - current_fleet_env,
+    hist_selection_median = median((interaction_env - fleet_env)[year < CUR]),
+    interaction_percentile = percentile_rank(interaction_env[year < CUR], current_interaction_env),
+    selection_percentile = percentile_rank((interaction_env - fleet_env)[year < CUR], current_selection_anomaly),
+    historical_years = sum(year < CUR), .groups = "drop") |>
+  mutate(absolute_anomaly = current_interaction_env - hist_interaction_median,
+         selection_shift = current_selection_anomaly - hist_selection_median) |>
+  left_join(select(species, species_code, common), by = "species_code")
+
+table2c |>
+  select(Species = common, Variable = variable, `Current Interaction Env.` = current_interaction_env,
+         `Historical Median` = hist_interaction_median, `Absolute Anomaly` = absolute_anomaly,
+         `Current Fleet Env.` = current_fleet_env, `Selection Anomaly` = current_selection_anomaly,
+         `Selection Shift` = selection_shift, `Interaction %ile` = interaction_percentile,
+         `Selection %ile` = selection_percentile) |>
+  group_by(Species) |> gt() |>
+  tab_header(title = md("**Table 2c.** Environment at interaction sets vs. fleet-wide environment (selection anomaly)")) |>
+  fmt_number(columns = 3:8, decimals = 3) |> fmt_number(columns = 9:10, decimals = 0)
+```
+
+## 4. Bayesian anomaly check
+
+```{r bayes-fig, fig.width=8, fig.height=4.5}
+per_species |>
+  select(common, current, pred_q05, pred_median, pred_q95, p_tail, flag) |>
+  ggplot(aes(y = reorder(common, current))) +
+  geom_linerange(aes(xmin = pmax(pred_q05, 0.5), xmax = pred_q95), colour = "#1C7293", linewidth = 3, alpha = .5) +
+  geom_point(aes(x = pred_median), colour = "#065A82", size = 3) +
+  geom_point(aes(x = current, colour = flag), size = 4, shape = 18) +
+  scale_colour_manual(values = c(High = "#F18F01", Typical = "#21295C", Low = "#5A6C7D")) +
+  scale_x_log10() + labs(x = "Interactions (log scale)", y = NULL, colour = "Flag",
+       title = "Current count against the Gamma-Poisson posterior predictive 90% interval") +
+  theme_minimal(base_family = "Calibri")
+```
+
+```{r bayes-table}
+per_species |>
+  transmute(Species = common, `Prior shape` = prior_shape, `Prior rate` = prior_rate,
+            `Predictive 5%` = pred_q05, `Predictive median` = pred_median, `Predictive 95%` = pred_q95,
+            `P(X ≥ current)` = p_tail, Flagged = p_tail < ALPHA) |>
+  gt() |> fmt_number(columns = 2:3, decimals = 3) |> fmt_number(columns = 7, decimals = 4)
+```
+
+## 5. Multi-disciplinary context (workshop review areas)
+
+```{r context}
+ctx_spatial  <- ps_read(con, "ctx_spatial", params$use_mock)
+ctx_gear     <- ps_read(con, "ctx_gear", params$use_mock)
+ctx_behavior <- ps_read(con, "ctx_behavior", params$use_mock)
+ctx_demo     <- ps_read(con, "ctx_demo", params$use_mock)
+ctx_climate  <- ps_read(con, "ctx_climate", params$use_mock)
+```
+
+### 5.1 Spatial effort dynamics
+```{r}
+ctx_spatial |> gt() |> tab_header(title = "Fleet effort share by stratum, baseline vs. current")
+```
+### 5.2 Operational and gear modifications
+```{r}
+ctx_gear |> gt() |> tab_header(title = "Gear configuration, adoption and interaction outcomes") |> sub_missing(missing_text = "—")
+```
+### 5.3 Fisher post-interaction behaviour
+```{r}
+ctx_behavior |> gt() |> tab_header(title = "Post-interaction movement and trip response") |> sub_missing(missing_text = "—")
+```
+### 5.4 Oceanographic and climate drivers
+```{r}
+ctx_climate |> gt() |> tab_header(title = "Basin-scale climate indicators, current year") |> sub_missing(missing_text = "—")
+```
+### 5.5 Demographic composition of take
+```{r}
+ctx_demo |> gt() |> tab_header(title = "Size-class composition, mortality and population context") |> sub_missing(missing_text = "—")
+```
+
+## 6. ITS running-sum tracker
+
+```{r its}
+its_track <- per_species |>
+  inner_join(its_ref |> filter(!is.na(annual_its)), by = "species_code") |>
+  rowwise() |>
+  mutate(wyrs = list(seq(window_start_year, length.out = its_window_years)),
+         cov = list(if (sector == "DSLL") effort$coverage_rate[match(unlist(wyrs), effort$year)] else rep(1, its_window_years)),
+         obs = list(ann$interactions[ann$species_code == species_code][match(unlist(wyrs), ann$year[ann$species_code == species_code])]),
+         years_elapsed = sum(!is.na(unlist(obs))),
+         cumulative = sum(unlist(obs) / unlist(cov), na.rm = TRUE),
+         expansion = 1 / mean(unlist(cov), na.rm = TRUE),
+         window_limit = annual_its * its_window_years,
+         yrs_left = its_window_years - years_elapsed,
+         p_exceed = if (yrs_left > 0) 1 - pnbinom((window_limit - cumulative) / expansion, size = prior_shape * yrs_left,
+                                                  prob = prior_rate / (prior_rate + 1)) else as.numeric(cumulative > window_limit),
+         alert = p_exceed > 0.25) |>
+  ungroup() |>
+  select(Species = common, Authority = authority, `Annual ITS` = annual_its, `Window (yrs)` = its_window_years,
+         `Years elapsed` = years_elapsed, `Cumulative expanded take` = cumulative, `Window limit` = window_limit,
+         `P(exceed before close)` = p_exceed, Alert = alert)
+its_track |> gt() |> fmt_number(columns = 6, decimals = 0) |> fmt_number(columns = 8, decimals = 3) |>
+  tab_source_note("ITS values are ILLUSTRATIVE placeholders; replace with the governing BiOp values. Alert threshold 0.25 follows the working-group trigger spec.")
+```
+
+## 7. Data aggregation and key findings {#sec-aggregation}
+
+This chapter aggregates Tables 2, 2b and 2c, the Bayesian check, the ITS tracker and the working-group
+context tables into the findings that lead the SAFE narrative. It is computed, not written, so it changes
+with the data. (When assembling the report, move this chapter above the tables with `{{< include >}}` or
+by reordering the child documents.)
+
+```{r aggregation, results="asis"}
+A <- per_species |> left_join(table2b |> select(species_code, rate_robust_anomaly, rate_percentile, annual_pct_change,
+                                              trend_model_flag, centroid_shift_km, pct_outside_hist90), by = "species_code")
+flagged  <- filter(A, flag == "High"); lowf <- filter(A, flag == "Low")
+gates_of <- function(r) paste(c("robust","percentile","bayes")[c(r$gate_robust, r$gate_percentile, r$gate_bayes)], collapse = ", ")
+beyond   <- filter(A, current > pred_q95 | current < pred_q05)
+bigshift <- filter(A, centroid_shift_km > 250) |> arrange(desc(centroid_shift_km))
+outside  <- filter(A, pct_outside_hist90 > 10)
+ocean_reg <- table2c |> group_by(variable) |>
+  summarise(mean_pct = mean(interaction_percentile), hi = sum(interaction_percentile >= 75), lo = sum(interaction_percentile <= 25),
+            sel_x = sum(selection_percentile >= 90 | selection_percentile <= 10), n = n(), .groups = "drop") |>
+  mutate(direction = case_when(hi > lo ~ "high", lo > hi ~ "low", TRUE ~ "mixed"))
+fallb <- filter(A, grepl("fallback|error", trend_model_flag, ignore.case = TRUE))
+eff_top <- ctx_spatial |> slice_max(abs(shift_pct_points), n = 1)
+its_hi  <- its_track |> filter(`Cumulative expanded take` / `Window limit` >= 0.75)
+
+findings <- c(
+  if (nrow(flagged)) sprintf("%d of %d monitored species %s flagged High in %d: %s.", nrow(flagged), nrow(A),
+        ifelse(nrow(flagged) == 1, "is", "are"), CUR,
+        paste(sprintf("%s (%d vs median %d; gates: %s)", flagged$common, flagged$current, as.integer(flagged$median),
+                      sapply(seq_len(nrow(flagged)), \(i) gates_of(flagged[i, ]))), collapse = "; "))
+  else sprintf("No species is flagged High in %d; all counts fall within their historical distributions.", CUR),
+  if (nrow(lowf)) sprintf("%s flagged Low (robust anomaly <= -2).", paste(lowf$common, collapse = ", ")),
+  sprintf("%d of %d species are above their historical median and %d show an increasing long-run slope; the rate anomaly agrees in sign with the count anomaly for %d of %d, so most of the change is not an artefact of effort.",
+          sum(A$current > A$median), nrow(A), sum(A$trend == "Increasing"),
+          sum(sign(A$robust_anomaly) == sign(A$rate_robust_anomaly)), nrow(A)),
+  if (nrow(beyond)) sprintf("The current count falls outside the Gamma-Poisson posterior predictive 90%% interval for %s.",
+        paste(sprintf("%s (%s)", beyond$common, ifelse(beyond$current > beyond$pred_q95, "above", "below")), collapse = ", "))
+  else "No current count falls outside its Gamma-Poisson posterior predictive 90% interval.",
+  if (nrow(bigshift)) sprintf("Interaction centroids moved more than 250 km for %s%s.",
+        paste(sprintf("%s (%.0f km)", bigshift$common, bigshift$centroid_shift_km), collapse = ", "),
+        if (nrow(outside)) sprintf("; %s fell outside the historical 90%% area",
+              paste(sprintf("%.1f%% of %s interactions", outside$pct_outside_hist90, tolower(outside$common)), collapse = " and ")) else "")
+  else "Interaction centroids stayed within 250 km of their historical positions for every species.",
+  { oc <- filter(ocean_reg, hi >= ceiling(n * .6) | lo >= ceiling(n * .6))
+    if (nrow(oc)) sprintf("A coherent ocean regime is visible at interaction sets: %s.",
+        paste(sprintf("%s %s for %d of %d species (mean %.0fth percentile)", oc$variable, oc$direction,
+                      ifelse(oc$direction == "high", oc$hi, oc$lo), oc$n, oc$mean_pct), collapse = "; ")) },
+  { sx <- filter(ocean_reg, sel_x > 0)
+    if (nrow(sx)) sprintf("Fleet selection anomalies are at historical extremes for %s, indicating the fleet fished a different habitat envelope than usual.",
+        paste(sprintf("%s (%d species)", sx$variable, sx$sel_x), collapse = ", ")) },
+  if (nrow(eff_top)) sprintf("Fleet effort share changed most in the %s stratum (%+.1f points; %s).", eff_top$stratum, eff_top$shift_pct_points, eff_top$operational_driver),
+  if (nrow(its_track)) { al <- filter(its_track, Alert)
+    if (nrow(al)) sprintf("ITS running-sum alert for %s.", paste(al$Species, collapse = ", "))
+    else if (nrow(its_hi)) sprintf("No ITS running-sum alert; %s.", paste(sprintf("%s stands at %.0f%% of its window limit after %d of %d years",
+              its_hi$Species, 100 * its_hi$`Cumulative expanded take` / its_hi$`Window limit`, its_hi$`Years elapsed`, its_hi$`Window (yrs)`), collapse = ", "))
+    else "No ITS running-sum alert; all tracked species are below 75% of their window limits." },
+  if (nrow(fallb)) sprintf("Negative-binomial trend fitting fell back to Poisson for %s; those annual-percent-change values carry wider uncertainty.", paste(fallb$common, collapse = ", "))
+)
+cat("### Key findings\n\n", paste0("* ", findings, "\n"), sep = "")
+```
+
+```{r aggregation-table}
+A |> transmute(Species = common, Flag = flag, `Gates fired` = sapply(seq_len(n()), \(i) gates_of(A[i, ])),
+               `Count (percentile)` = sprintf("%d (P%.0f)", current, percentile),
+               `Rate anomaly` = sprintf("%+.2f (P%.0f)", rate_robust_anomaly, rate_percentile),
+               Trend = sprintf("%+.1f%%/yr", annual_pct_change), `Centroid shift` = sprintf("%.0f km", centroid_shift_km),
+               `Predictive 90%` = sprintf("%d–%d", pred_q05, pred_q95)) |>
+  gt() |> tab_header(title = md(sprintf("**Cross-species aggregation of anomaly evidence, %d**", CUR))) |>
+  data_color(columns = Flag, fn = function(x) case_when(x == "High" ~ "#F18F01", x == "Low" ~ "#1C7293", TRUE ~ "#F4F6F8"))
+ocean_reg |> transmute(Variable = variable, `Mean percentile` = round(mean_pct), `Species high (≥75th)` = sprintf("%d of %d", hi, n),
+                       `Species low (≤25th)` = sprintf("%d of %d", lo, n), `Extreme selection anomaly` = sel_x,
+                       Reading = ifelse(direction == "mixed", "no coherent signal", paste(direction, "across the fishery"))) |>
+  gt() |> tab_header(title = "Ocean regime at interaction sets")
+```
+
+## 8. Draft causal narratives {#sec-narratives}
+
+The narrative for each species is drafted from the tables above. With `params$use_llm = TRUE` the
+aggregated table rows for each species are sent to a large-language model to produce a *first draft*
+that an analyst then edits; with `use_llm = FALSE` a rule-based template is used.
+
+::: {.callout-important}
+## AI use governance
+Only aggregated summary statistics (the rows of Tables 2, 2b, 2c) are sent to the model — never PIROP observer
+records. NOAA analysts must route this call through an agency-approved, FedRAMP-authorized endpoint
+(set `params$llm_endpoint`, e.g. a Vertex AI project) rather than a public consumer service, and every draft
+carries a provenance line so it cannot be mistaken for reviewed text.
+:::
+
+```{r gemini-narratives}
+#| echo: true
+#| code-fold: false
+
+# Build a compact, aggregated evidence packet per species -----------------------
+evidence_packet <- function(code) {
+  r2  <- per_species |> filter(species_code == code)
+  r2b <- table2b     |> filter(species_code == code)
+  oc  <- table2c     |> filter(species_code == code)
+  list(
+    species = r2$common, year = CUR, flag = r2$flag,
+    interactions = list(current = r2$current, median = r2$median, p10 = r2$p10, p90 = r2$p90,
+                        percentile = r2$percentile, robust_anomaly = round(r2$robust_anomaly, 2),
+                        bayes_tail_prob = round(r2$p_tail, 3), posterior_pred_90 = c(r2$pred_q05, r2$pred_q95)),
+    rate = list(current = r2b$rate_cur, percentile = r2b$rate_percentile, robust_anomaly = round(r2b$rate_robust_anomaly, 2),
+                annual_pct_change = round(r2b$annual_pct_change, 1), trend_model = r2b$trend_model, trend_years = r2b$tw),
+    spatial = list(centroid_shift_km = round(r2b$centroid_shift_km), pct_outside_hist90 = r2b$pct_outside_hist90),
+    ocean = oc |> transmute(variable, interaction_percentile = round(interaction_percentile),
+                            selection_percentile = round(selection_percentile), absolute_anomaly = signif(absolute_anomaly, 3)),
+    context = list(spatial_effort = ctx_spatial, gear = ctx_gear, behaviour = ctx_behavior,
+                   climate = ctx_climate, demographics = filter(ctx_demo, species_code == code))
+  )
+}
+
+system_prompt <- paste(
+  "You are drafting the protected-species interactions narrative for the Western Pacific Regional Fishery",
+  "Management Council annual SAFE report (Pelagic FEP section 3.3.2). Write in plain, factual, third-person",
+  "scientific prose for a Council audience. Use ONLY the numbers in the evidence packet; do not invent values.",
+  "Structure: (1) one sentence stating the flag and the count vs. historical distribution; (2) whether the rate,",
+  "trend and Bayesian check agree; (3) spatial and ocean context and which causal-diagnostic branch the evidence",
+  "supports (fishery change, expected from trend/variability, ocean-driven distribution or catchability shift,",
+  "or cause unclear); (4) what SME review is needed. Cite the causal-diagnostic branch explicitly. 120-180 words.",
+  "Do not use hedging filler. Do not mention that you are an AI.")
+
+draft_with_gemini <- function(packet) {
+  key <- Sys.getenv("GEMINI_API_KEY")
+  stopifnot("GEMINI_API_KEY not set" = nzchar(key))
+  body <- list(
+    system_instruction = list(parts = list(list(text = system_prompt))),
+    contents = list(list(role = "user", parts = list(list(text = paste0(
+      "Evidence packet (JSON):\n", jsonlite::toJSON(packet, auto_unbox = TRUE, pretty = TRUE, digits = 4)))))),
+    generationConfig = list(temperature = 0.2, maxOutputTokens = 600))
+  resp <- httr2::request(sprintf("%s/models/%s:generateContent", params$llm_endpoint, params$llm_model)) |>
+    httr2::req_headers(`x-goog-api-key` = key, `Content-Type` = "application/json") |>
+    httr2::req_body_json(body) |>
+    httr2::req_retry(max_tries = 3) |>
+    httr2::req_perform() |>
+    httr2::resp_body_json()
+  txt <- resp$candidates[[1]]$content$parts[[1]]$text
+  paste0(trimws(txt), "\n\n*Draft generated by ", params$llm_model, " on ", Sys.Date(),
+         " from aggregated pipeline outputs; requires analyst review before use.*")
+}
+
+narratives <- map(species$species_code, function(code) {
+  pk <- evidence_packet(code)
+  txt <- if (isTRUE(params$use_llm)) tryCatch(draft_with_gemini(pk), error = function(e) {
+             paste0("[LLM call failed: ", conditionMessage(e), "] ",
+                    template_narrative(filter(per_species, species_code == code),
+                                       filter(table2b, species_code == code), filter(table2c, species_code == code)))
+           }) else template_narrative(filter(per_species, species_code == code),
+                                      filter(table2b, species_code == code), filter(table2c, species_code == code))
+  list(species_code = code, species = pk$species, flag = pk$flag, narrative = txt,
+       source = if (isTRUE(params$use_llm)) params$llm_model else "rule-based template")
+})
+```
+
+```{r print-narratives, results="asis"}
+for (n in narratives) cat(sprintf("\n### %s — %s\n\n%s\n", n$species, n$flag, n$narrative))
+```
+
+## 9. Export for the decision-support application
+
+```{r export}
+out <- list(
+  meta = list(generated = as.character(Sys.time()), current_year = CUR, alpha = ALPHA,
+              mode = if (params$use_mock) "test" else "lotus",
+              decision_rule = sprintf("OR gate: robust >= %s | percentile >= %s | bayes p < %s",
+                                      params$robust_threshold, params$percentile_threshold, ALPHA)),
+  table2_interactions = per_species |> select(species_code, species = common, current, mean, median, p10, p90, percentile,
+                                              robust_anomaly, n_years, trend_slope, trend, flag),
+  table2b_rate_spatial = table2b |> select(species_code, species = common, current_rate = rate_cur, hist_median_rate, hist_p90_rate,
+                                           rate_percentile, rate_robust_anomaly, annual_pct_change, trend_model, trend_model_flag,
+                                           trend_years = tw, centroid_shift_km, pct_outside_hist90),
+  table2c_ocean = table2c,
+  bayes = per_species |> select(species_code, species = common, prior_shape, prior_rate, posterior_pred_q05 = pred_q05,
+                                posterior_pred_median = pred_median, posterior_pred_q95 = pred_q95, p_tail) |> mutate(alpha = ALPHA, flagged = p_tail < ALPHA),
+  its = its_track,
+  aggregation = list(findings = findings, ocean_regime = ocean_reg),
+  narratives = narratives,
+  series = split(ann, ann$species_code) |> map(~ list(years = .x$year, interactions = .x$interactions)),
+  effort = effort,
+  context = list(spatial_effort = ctx_spatial, gear = ctx_gear, fisher_behavior = ctx_behavior,
+                 climate_indicators = ctx_climate, demographics = ctx_demo)
+)
+jsonlite::write_json(out, params$export_json, auto_unbox = TRUE, pretty = TRUE, digits = 6, na = "null")
+cat("Wrote", params$export_json, "— load this file in the decision-support app (Data Pipeline tab).")
+```
+
+## Appendix — model notes
+
+* **Robust anomaly** uses the median and MAD (×1.4826) so a single extreme year cannot inflate the baseline.
+* **Trend** is a log-linear Poisson GLM with observed sets as an offset; a negative-binomial model replaces it
+  when the Pearson dispersion exceeds 1.5. When `glm.nb` fails to converge the Poisson fit is retained and the
+  table flags it, matching the "NB fitting error; Poisson fallback" convention in the reference workbook.
+* **Bayesian check** is a Gamma–Poisson conjugate model. The prior is method-of-moments from the historical years
+  (variance-matched when overdispersed). The tail probability P(X ≥ current) is evaluated with
+  `1 - pbeta(p, shape, current)`, the negative-binomial–incomplete-beta identity, which is exact for non-integer shape
+  (spreadsheet `NEGBINOM.DIST` silently truncates it).
+* **OR gate**: any single gate firing yields *High*. The gate thresholds are parameters so they can be
+  re-elicited with the SDM swing-weighting tool in the decision-support app.
+* **Placeholders needing SME validation before Council use**: ITS values, gear/bait multipliers, demographic
+  size-class shares, and the ocean selection-anomaly interpretation.

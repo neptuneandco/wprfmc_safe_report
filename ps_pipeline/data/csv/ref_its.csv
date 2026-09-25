@@ -1,0 +1,7 @@
+species_code,authority,annual_its,its_window_years,window_start_year
+LHT,SSLL BiOp (illustrative),36.0,5.0,2021.0
+LBT,SSLL BiOp (illustrative),16.0,5.0,2021.0
+OWT,DSLL BiOp (illustrative),300.0,5.0,2023.0
+BFAL,Seabird measures (no ITS),,,
+LAAL,Seabird measures (no ITS),,,
+SMA,Not ESA-listed,,,

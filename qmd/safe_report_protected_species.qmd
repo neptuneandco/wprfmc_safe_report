@@ -1,0 +1,140 @@
+---
+title: "Annual SAFE Report: Protected Species Section & Anomaly Assessment"
+subtitle: "Western Pacific Regional Fishery Management Council (WPRFMC)"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    theme: cosmo
+    embed-resources: true
+    code-fold: show
+  pdf:
+    documentclass: article
+    geometry: "margin=1in"
+    keep-tex: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| label: setup-libraries
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(httr2)
+library(jsonlite)
+
+# Load test datasets generated from LOTUS DB schema and ps_monitoring_tables_AI.xlsx
+lotus_data <- read_csv("mock_lotus_observer_data.csv")
+ps_summary <- read_csv("mock_ps_monitoring_summary.csv")
+```
+
+#| label: tbl-summary
+#| tbl-cap: "Protected Species Interaction & Anomaly Baseline Summary Table"
+
+# Process summary statistics and evaluate threshold triggers
+ps_compiled <- ps_summary %>%
+  mutate(
+    Exceedance_Probability = pmin(1.0, pmax(0.01, 1 - pnorm(ITS_5Yr_Limit, mean = Expanded_Estimate, sd = 12))),
+    Anomaly_Status = if_else(
+      Expanded_Estimate > Historical_Mean_5Yr * 1.2 | Exceedance_Probability > 0.15,
+      "FLAGGED FOR REVIEW",
+      "TYPICAL"
+    )
+  )
+
+ps_compiled %>%
+  select(Species, Observed_Takes, Coverage_Rate, Expanded_Estimate, Historical_Mean_5Yr, ITS_5Yr_Limit, Anomaly_Status) %>%
+  kable(
+    col.names = c("Species", "Observed", "Coverage", "Expanded Est.", "5-Yr Hist. Mean", "5-Yr ITS Limit", "Anomaly Status"),
+    digits = 2,
+    align = "lcccccc"
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+  ```
+  #| label: gemini-causal-narrative
+#| output: asis
+
+# 1. Extract flagged species for narrative drafting
+flagged_species <- ps_compiled %>% filter(Anomaly_Status == "FLAGGED FOR REVIEW")
+
+# 2. Define Function to Query Gemini API
+call_gemini_gem <- function(species_name, obs_takes, exp_est, hist_mean, its_limit) {
+  
+  api_key <- Sys.getenv("GEMINI_API_KEY")
+  
+  # Fallback to local structured narrative generation if API Key is not set
+  if (nchar(api_key) == 0) {
+    return(paste0(
+      "> **[Simulated Gemini Gem Output for ", species_name, "]**\n\n",
+      "**Causal Narrative & Qualitative Diagnostic:**\n",
+      "During the current reporting period, observed interactions for **", species_name, "** reached ", obs_takes, 
+      " individual(s), yielding an expanded fleet-wide interaction estimate of **", round(exp_est, 1), "**.\n\n",
+      "- **Historical Comparison:** This expanded estimate exceeds the 5-year historical baseline mean of ", hist_mean, ".\n",
+      "- **ITS Compliance:** The projected cumulative count is evaluating against the 5-year Incidental Take Statement (ITS) cap of ", its_limit, ".\n",
+      "- **Environmental & Spatial Drivers:** Oceanographic data indicate a sea surface temperature (SST) anomaly and localized fleet effort shift toward the $17.5^\\circ\\text{C}-18.5^\\circ\\text{C}$ dynamic band. "
+    ))
+  }
+  
+  # System Prompt framing Gemini as an expert WPRFMC Environmental Decision Analyst
+  prompt_text <- paste0(
+    "You are an expert Environmental Decision Analyst for the Western Pacific Regional Fishery Management Council (WPRFMC).\n",
+    "Draft a professional, objective causal narrative for the SAFE Report protected species section based on these data:\n",
+    "- Species: ", species_name, "\n",
+    "- Observed Takes (LOTUS): ", obs_takes, "\n",
+    "- Expanded Fleet Interaction Estimate: ", round(exp_est, 1), "\n",
+    "- 5-Year Historical Mean: ", hist_mean, "\n",
+    "- 5-Year ITS Cap: ", its_limit, "\n\n",
+    "Requirements:\n",
+    "1. Explain potential environmental (SST/EKE shifts), gear, or spatial fleet drivers.\n",
+    "2. Assess compliance relative to the ESA Biological Opinion Incidental Take Statement (ITS).\n",
+    "3. Provide recommended management or monitoring next steps for the Pelagic Plan Team."
+  )
+  
+  req <- request(paste0("[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=)", api_key)) %>%
+    req_headers("Content-Type" = "application/json") %>%
+    req_body_json(list(
+      contents = list(list(parts = list(list(text = prompt_text))))
+    ))
+  
+  resp <- req_perform(req)
+  result <- resp_body_json(resp)
+  return(result$candidates[[1]]$content$parts[[1]]$text)
+}
+
+# 3. Iterate over flagged species and print generated narratives
+if (nrow(flagged_species) > 0) {
+  for (i in 1:nrow(flagged_species)) {
+    sp <- flagged_species[i, ]
+    narrative <- call_gemini_gem(
+      species_name = sp$Species,
+      obs_takes = sp$Observed_Takes,
+      exp_est = sp$Expanded_Estimate,
+      hist_mean = sp$Historical_Mean_5Yr,
+      its_limit = sp$ITS_5Yr_Limit
+    )
+    cat(narrative, "\n\n")
+  }
+} else {
+  cat("*No protected species triggered the anomaly threshold during this evaluation period. All interaction rates remain within historical parameters.*\n")
+}
+```
+#| label: fig-spatial-effort
+#| fig-cap: "Latitudinal Distribution of Fishing Effort vs. Interaction Anomalies"
+#| fig-width: 7
+#| fig-height: 4
+
+ggplot(lotus_data, aes(x = SET_BEGIN_LAT, y = SET_BEGIN_TEMP, color = as.factor(OBSERVED_OWT_TAKES > 0))) +
+  geom_point(alpha = 0.7, size = 2) +
+  scale_color_manual(values = c("FALSE" = "#065A82", "TRUE" = "#F18F01"), name = "OWT Take Observed") +
+  labs(
+    x = "Latitude (°N)",
+    y = "Sea Surface Temperature (°C)",
+    title = "LOTUS Set-Level Environmental Distribution"
+  ) +
+  theme_minimal()
+  ```
+  

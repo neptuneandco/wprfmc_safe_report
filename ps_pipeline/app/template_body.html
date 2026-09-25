@@ -1,0 +1,250 @@
+<body>
+<div class="shell">
+<aside class="rail">
+  <h1>Protected Species Decision Support</h1>
+  <p class="sub">Hawaii longline fisheries · SAFE Pelagic FEP §3.3.2</p>
+  <nav id="nav" aria-label="Steps">
+    <button class="step active" data-tab="home"><span class="n">★</span><span>Start here</span></button>
+    <button class="step" data-tab="pipeline"><span class="n">1</span><span>Load this year's data<span class="sub">Data Pipeline</span></span></button>
+    <button class="step" data-tab="anomaly"><span class="n">2</span><span>Which species look unusual?<span class="sub">Anomaly Detection Dashboard</span></span></button>
+    <button class="step" data-tab="causal"><span class="n">3</span><span>Why might that be?<span class="sub">Causal Diagnostic</span></span></button>
+    <button class="step" data-tab="tables"><span class="n">4</span><span>Check the report tables<span class="sub">SAFE Summary Tables</span></span></button>
+    <button class="step" data-tab="narrative"><span class="n">5</span><span>Edit the species paragraphs<span class="sub">Narrative Drafts</span></span></button>
+    <button class="step" data-tab="export"><span class="n">6</span><span>Create the report section<span class="sub">Word or Google Doc</span></span></button>
+    <button class="step" data-tab="bayes"><span class="n">A</span><span>Check the statistics<span class="sub">Bayesian Anomaly Tool · for analysts</span></span></button>
+    <button class="step" data-tab="agent"><span class="n">B</span><span>Compare with the take limit<span class="sub">Decision Agent · for analysts</span></span></button>
+    <button class="step" data-tab="docs"><span class="n">?</span><span>Glossary &amp; methods</span></button>
+  </nav>
+  <label class="switch"><input type="checkbox" id="techToggle"> Show technical details</label>
+  <div class="foot">Data year: <b id="yearLabel">—</b><br><span class="tech">Data mode: <b id="modeLabel">test</b><br>Rule: <span id="ruleLabel">—</span></span></div>
+</aside>
+
+<main class="main">
+
+<!-- 0 HOME ------------------------------------------------------------------ -->
+<div class="tab active" id="tab-home">
+  <div class="topbar">
+    <div><p class="eyebrow">SAFE report · protected species</p><h2>Start here</h2>
+      <p class="dek">This tool turns the year's observer summaries into the protected-species section of the SAFE report. Work through the six steps in order; the two analyst pages and the glossary are there when you want them.</p></div>
+  </div>
+  <section class="grid g2">
+    <div class="panel"><h3>This year at a glance</h3><div id="homeGlance" class="plain"></div></div>
+    <div class="panel"><h3>Your steps</h3><div id="homeSteps"></div></div>
+  </section>
+  <section class="grid g3">
+    <div class="card"><h4>Who does what</h4><p class="muted">PIFSC runs the data pipeline and sends you one file (<b>pipeline_output.json</b>) each year. You load it, review what looks unusual, answer two expert questions per flagged species, edit the paragraphs and create the document. Nothing you do here changes the underlying data.</p></div>
+    <div class="card"><h4>What the flags mean</h4><p class="muted"><span class="chip flag-High">High</span> this year's count is unusually high compared with past years — it needs a paragraph explaining why. <span class="chip flag-Typical">Typical</span> within the normal range. <span class="chip flag-Low">Low</span> unusually low.</p></div>
+    <div class="card"><h4>If something looks wrong</h4><p class="muted">Every number traces back to the summary tables in step 4. If a value looks off, note the species and table and send it to PIFSC — the pipeline is re-run and you load the new file. Do not edit numbers in the paragraphs by hand.</p></div>
+  </section>
+</div>
+
+<!-- 1 PIPELINE ------------------------------------------------------------ -->
+<div class="tab" id="tab-pipeline">
+  <div class="topbar">
+    <div><p class="eyebrow">Step 1</p><h2>Load this year's data</h2>
+      <p class="dek">PIFSC sends one file each year, <b>pipeline_output.json</b>. Load it here and every page updates. Observer records themselves never leave NOAA — the file holds only yearly summaries.</p></div>
+    <div class="badges"><span class="badge warn" id="dataBadge">Example data</span>
+      <label class="btn primary" for="jsonFile">Load this year's file</label><input type="file" id="jsonFile" accept=".json" style="display:none">
+      <button class="btn" id="resetData">Back to example data</button></div>
+  </div>
+  <section class="panel"><h3>What is loaded</h3><div id="loadedPlain" class="plain"></div></section>
+  <section class="flow tech" aria-label="Pipeline flow">
+    <div class="st noaa"><span class="k">NOAA · PIFSC</span><h4>Observer data</h4><ul><li>Field tablets → Pirops (debrief / QA)</li><li>LOTUS authoritative backend</li><li>Set-level, vessel-level (confidential)</li></ul></div>
+    <div class="st noaa"><span class="k">NOAA · PIFSC</span><h4>Aggregated views</h4><ul><li>species × year interactions</li><li>effort &amp; observer coverage</li><li>centroids, matched ocean fields</li><li>3-vessel rule enforced upstream</li></ul></div>
+    <div class="st pipe"><span class="k">Quarto · R</span><h4>Analysis engine</h4><ul><li>MAD-z, rank percentile</li><li>Poisson / NB trend GLM</li><li>Gamma-Poisson predictive</li><li>OR-gate flag</li></ul></div>
+    <div class="st pipe"><span class="k">Quarto · R</span><h4>Outputs</h4><ul><li>Tables 2, 2b, 2c (gt)</li><li>Narrative drafts (LLM, gated)</li><li>SAFE section .docx / .html</li><li>pipeline_output.json</li></ul></div>
+    <div class="st app"><span class="k">This app</span><h4>Decision support</h4><ul><li>Anomaly dashboard</li><li>Causal diagnostic walk-through</li><li>Bayesian &amp; decision tools</li><li>Analyst-edited narratives</li></ul></div>
+  </section>
+  <section class="grid g3 tech">
+    <div class="card"><h4>Run status</h4><div id="runStatus"></div></div>
+    <div class="card"><h4>Provenance</h4><div id="provList" class="muted"></div></div>
+    <div class="card"><h4>Run log</h4><div class="log" id="runLog"></div></div>
+  </section>
+  <section class="panel tech">
+    <h3>Aggregated inputs this app has loaded</h3>
+    <div class="tblwrap"><table id="inputsTable"></table></div>
+  </section>
+</div>
+
+<!-- 2 TABLES -------------------------------------------------------------- -->
+<div class="tab" id="tab-tables">
+  <div class="topbar">
+    <div><p class="eyebrow">Step 4</p><h2>Check the report tables</h2>
+      <p class="dek">These are Tables 2, 2b and 2c exactly as they will appear in the SAFE report. Skim them for anything that looks wrong before you write. Hover over a column heading for what it means.</p></div>
+    <div class="badges"><label class="toggle tech"><input type="checkbox" id="showRef"> Show reference workbook values</label><button class="btn" id="csvAll">Download tables (CSV)</button></div>
+  </div>
+  <section class="panel"><h3>Table 2 · How many interactions this year, compared with past years</h3><div class="tblwrap"><table id="t2"></table></div></section>
+  <section class="panel"><h3>Table 2b · Interactions per set, the recent trend, and where the fishery was</h3><div class="tblwrap"><table id="t2b"></table></div></section>
+  <section class="panel"><h3>Table 2c · Ocean conditions where interactions happened</h3><div class="tblwrap"><table id="t2c"></table></div></section>
+</div>
+
+<!-- 3 ANOMALY ------------------------------------------------------------- -->
+<div class="tab" id="tab-anomaly">
+  <div class="topbar">
+    <div><p class="eyebrow">Step 2</p><h2>Which species look unusual?</h2>
+      <p class="dek">Each species is checked three different ways against its own history. If any check says "unusual", the species is flagged and needs explaining. Click a species to see its story.</p></div>
+    <div class="badges"><span class="badge" id="flagCount"></span></div>
+  </div>
+  <section class="strip" id="strip"></section>
+  <section class="grid g2">
+    <div class="panel"><h3 id="seriesTitle">Interaction series</h3><div class="chartbox"><canvas id="seriesChart"></canvas></div>
+      <p class="muted">Shaded band = the range most past years fell in; dashed line = the typical year; orange bar = where this year would be expected to land given the recent trend.</p></div>
+    <div class="panel"><h3 id="plainTitle">In plain terms</h3><div id="plainReading" class="plain"></div><div id="gateEvidence" style="margin-top:12px"></div></div>
+  </section>
+  <section class="grid g2">
+    <div class="panel"><h3>Spatial effort dynamics</h3><div class="tblwrap fit"><table id="ctxSpatial"></table></div></div>
+    <div class="panel"><h3>Fisher post-interaction behaviour</h3><div class="tblwrap fit"><table id="ctxBehavior"></table></div></div>
+  </section>
+  <section class="panel"><h3>Operational &amp; gear modifications</h3><div class="tblwrap fit"><table id="ctxGear"></table></div></section>
+  <section class="grid g2">
+    <div class="panel"><h3>Oceanographic &amp; habitat drivers</h3><div class="chartbox short"><canvas id="oceanChart"></canvas></div><div class="tblwrap fit" style="margin-top:12px"><table id="ctxClimate"></table></div></div>
+    <div class="panel"><h3>Demographic composition of take</h3><div class="tblwrap fit"><table id="ctxDemo"></table></div><p class="muted" id="demoNote"></p></div>
+  </section>
+</div>
+
+<!-- 4 CAUSAL -------------------------------------------------------------- -->
+<div class="tab" id="tab-causal">
+  <div class="topbar">
+    <div><p class="eyebrow">Step 3</p><h2>Why might that be?</h2>
+      <p class="dek">The working group's checklist for a higher-than-normal count. The data answers most of the questions; two need your expert judgement. Answer them below and the conclusion updates.</p></div>
+    <div class="badges"><select id="causalSpecies" style="width:auto"></select></div>
+  </div>
+  <section class="panel"><svg id="tree" class="tree" viewBox="0 0 1200 700" role="img" aria-label="Causal diagnostic decision tree"></svg></section>
+  <section class="grid g2">
+    <div class="card"><h4>Your expert judgement</h4>
+      <div id="smeQ" class="plain"></div></div>
+    <div class="card"><h4>Conclusion</h4><div id="causalConclusion"></div></div>
+  </section>
+  <section class="card tech"><h4>Evidence used</h4><div id="causalEvidence"></div></section>
+</div>
+
+<!-- 5 BAYES --------------------------------------------------------------- -->
+<div class="tab" id="tab-bayes">
+  <div class="topbar">
+    <div><p class="eyebrow">For analysts</p><h2>Check the statistics</h2>
+      <p class="dek">Answers one question: if this were a normal year, how likely is a count at least this high? A small chance (under 5%) means the count is statistically unexpected. The sliders let an analyst test how sensitive that answer is.</p></div>
+  </div>
+  <section class="grid" style="grid-template-columns:300px 1fr">
+    <div class="card">
+      <div class="ctl"><label>Species</label><select id="bSpecies"></select></div>
+      <div class="ctl"><label>Cut-off for "unexpected" (α) <b id="bAlphaL">0.05</b></label><input type="range" id="bAlpha" min="0.01" max="0.20" step="0.01" value="0.05"></div>
+      <div class="ctl tech"><label>Prior weight (× historical evidence) <b id="bWeightL">1.0</b></label><input type="range" id="bWeight" min="0.2" max="2" step="0.1" value="1"></div>
+      <div class="ctl"><label>How many past years to compare with <b id="bWinL">all</b></label><input type="range" id="bWin" min="5" max="19" step="1" value="19"></div>
+      <div class="ctl tech"><label class="toggle"><input type="checkbox" id="bOverdisp" checked> Variance-matched prior when overdispersed</label></div>
+      <div class="ctl"><label>Try a different count ("what if it had been…") <b id="bCountL"></b></label><input type="number" id="bCount" min="0" step="1"></div>
+      <p class="muted">Only higher-than-expected counts are treated as anomalies of concern.</p>
+    </div>
+    <div>
+      <div class="grid g4" id="bStats"></div>
+      <div class="panel" style="margin-top:16px"><div class="chartbox tall"><canvas id="bayesChart"></canvas></div></div>
+    </div>
+  </section>
+  <section class="panel tech">
+    <h3>Elicitation: calibrating α with the historical flag rate</h3>
+    <div class="grid g2">
+      <div><div id="calibTable" class="tblwrap fit"><table id="calib"></table></div></div>
+      <div class="muted">For each α the table shows how many species would have been flagged in the current year and what share of the historical record (all species × years, each judged against the years before it) would have been flagged. A structured-decision-making elicitation with the Plan Team should set α so the implied false-alarm rate matches the review capacity of the Council process.</div>
+    </div>
+  </section>
+</div>
+
+<!-- 6 AGENT --------------------------------------------------------------- -->
+<div class="tab" id="tab-agent">
+  <div class="topbar">
+    <div><p class="eyebrow">For analysts</p><h2>Compare with the take limit</h2>
+      <p class="dek">Scales the observed count up to the whole fleet and compares it with the incidental take statement (ITS). The result is a chance of exceeding the limit and a suggested posture. The adjustment sliders are for analysts and are capped so they cannot push the answer to a closure on their own.</p></div>
+    <div class="badges"><span class="badge warn">ITS values and adjustment factors are placeholders until PIFSC and the Council confirm them</span></div>
+  </div>
+  <section class="grid" style="grid-template-columns:320px 1fr">
+    <div class="card">
+      <h4>Anchor (LOTUS)</h4>
+      <div class="ctl"><label>Species</label><select id="aSpecies"></select></div>
+      <div class="ctl"><label>Observed interactions <b id="aObsL"></b></label><input type="number" id="aObs" min="0" step="1"></div>
+      <div class="ctl"><label>Observer coverage <b id="aCovL"></b></label><input type="range" id="aCov" min="0.05" max="1" step="0.01"></div>
+      <div class="ctl"><label>Annual ITS (illustrative) <b id="aItsL"></b></label><input type="number" id="aIts" min="1" step="1"></div>
+      <h4 style="margin-top:14px" class="tech">Adjustment factors</h4>
+      <div class="ctl tech"><label class="toggle"><input type="checkbox" id="aBeta"> β reporting-bias scaler (unobserved release) <b id="aBetaL">1.0×</b></label><input type="range" id="aBetaV" min="1" max="2.5" step="0.1" value="1.3"></div>
+      <div class="ctl tech"><label>Environmental sensitivity <b id="aEnvL"></b></label><input type="range" id="aEnv" min="0" max="1" step="0.05" value="0.3"><span class="muted">0 = ignore ocean anomaly; 1 = full weight on Table 2c selection anomaly</span></div>
+      <div class="ctl tech"><label>Gear / hook-position multiplier <b id="aGearL"></b></label><input type="range" id="aGear" min="0.8" max="1.3" step="0.01" value="1"></div>
+      <div class="ctl tech"><label>Juvenile share of take <b id="aJuvL"></b></label><input type="range" id="aJuv" min="0" max="1" step="0.05"></div>
+      <h4 style="margin-top:14px">Council posture</h4>
+      <div class="ctl"><label>Conservation priority <b id="aRiskL">Balanced</b></label><input type="range" id="aRisk" min="1" max="10" step="1" value="5"></div>
+      <div class="ctl"><label>Exceedance probability that triggers review <b id="aTrigL">25%</b></label><input type="range" id="aTrig" min="0.05" max="0.6" step="0.05" value="0.25"></div>
+    </div>
+    <div>
+      <div class="banner" id="aBanner"><div><h3 id="aTitle">—</h3><p id="aSub"></p></div><div><div class="stat" id="aPex">—<small>P(expanded take &gt; annual ITS)</small></div></div></div>
+      <div class="grid g2" style="margin-top:16px">
+        <div class="panel"><h4>Calibrated take distribution</h4><div class="chartbox short"><canvas id="agentChart"></canvas></div></div>
+        <div class="panel"><h4>ITS 5-year running sum</h4><div class="chartbox short"><canvas id="itsChart"></canvas></div><p class="muted" id="itsNote"></p></div>
+      </div>
+      <div class="grid g2" style="margin-top:16px">
+        <div class="panel"><h4>How the number was reached</h4><div id="aAudit" class="muted"></div></div>
+        <div class="panel"><h4>Demographic penalty curve</h4><div class="chartbox short"><canvas id="penaltyChart"></canvas></div></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- 7 NARRATIVE ----------------------------------------------------------- -->
+<div class="tab" id="tab-narrative">
+  <div class="topbar">
+    <div><p class="eyebrow">Step 5</p><h2>Edit the species paragraphs</h2>
+      <p class="dek">A first draft for every species, written from the tables. Edit them as you would any paragraph — add what you know about the fishery, the ocean and the population. Your edited text is what goes into the document in step 6. Flagged species come first.</p></div>
+    <div class="badges"><button class="btn" id="mdExport">Export edited drafts (Markdown)</button></div>
+  </div>
+  <section class="grid g2" id="narrCards"></section>
+</div>
+
+<!-- 8 EXPORT ---------------------------------------------------------------- -->
+<div class="tab" id="tab-export">
+  <div class="topbar">
+    <div><p class="eyebrow">Step 6</p><h2>Create the report section</h2>
+      <p class="dek">Puts together §3.3.2 — the key findings, your species paragraphs, the three tables and a methods note — as one document you can drop into the SAFE report. Choose Word or Google Doc.</p></div>
+    <div class="badges"><button class="btn primary" id="btnWord">Create Word document</button><button class="btn primary" id="btnGDoc">Create Google Doc</button></div>
+  </div>
+  <section class="panel" id="exportStatus" style="display:none"></section>
+  <section class="panel">
+    <h3>Key findings that will open the section</h3>
+    <p class="muted">Written automatically from the tables. If you disagree with one, the place to change it is the source table or your paragraph — these sentences are regenerated from the data.</p>
+    <div id="aggFindings"></div>
+  </section>
+  <section class="panel"><h3>Cross-species aggregation</h3><div class="tblwrap fit"><table id="aggTable"></table></div></section>
+  <section class="grid g2">
+    <div class="panel"><h3>Ocean regime at interaction sets</h3><div class="tblwrap fit"><table id="aggOcean"></table></div></div>
+    <div class="panel"><h3>What the document will contain</h3><div id="aggOutline" class="muted"></div></div>
+  </section>
+</div>
+
+<!-- 9 DOCS ---------------------------------------------------------------- -->
+<div class="tab" id="tab-docs">
+  <div class="topbar"><div><p class="eyebrow">Reference</p><h2>Glossary &amp; methods</h2><p class="dek">Plain-language definitions of the terms used in this tool, followed by the technical method notes for analysts.</p></div></div>
+  <section class="panel"><h3>Glossary</h3><div id="glossary" class="tblwrap fit"><table id="glossTable"></table></div></section>
+  <section class="grid g2 tech">
+    <div class="card"><h4>Robust anomaly (MAD-z)</h4><p class="muted">(current − median) ÷ (1.4826 × MAD) over the historical years. Immune to a single extreme year in the baseline. Gate fires at ≥ 2.</p></div>
+    <div class="card"><h4>Rank percentile</h4><p class="muted">Share of historical years strictly below the current value. Gate fires at ≥ 90 (i.e. the current year beats at least 90% of the record).</p></div>
+    <div class="card"><h4>Trend model</h4><p class="muted">Log-linear Poisson GLM with observed sets as an offset, 5-year window for seabirds and sharks, 10-year for turtles. A negative-binomial model replaces it when Pearson dispersion exceeds 1.5; a convergence failure is reported as "NB fitting error; Poisson fallback" rather than hidden.</p></div>
+    <div class="card"><h4>Gamma-Poisson predictive</h4><p class="muted">Prior shape/rate by method of moments (variance-matched when overdispersed). P(X ≥ current) = 1 − I<sub>p</sub>(shape, current) with p = rate ÷ (rate + 1). Exact for non-integer shape; spreadsheet NEGBINOM.DIST silently truncates the shape argument. Validated against scipy.stats.nbinom and R pnbinom.</p></div>
+    <div class="card"><h4>OR-gate decision</h4><p class="muted">High if any gate fires. Gates are deliberately redundant: MAD-z is distribution-free, the percentile is scale-free, the Bayesian test accounts for overdispersion. Thresholds are parameters to be set by structured elicitation with the Plan Team.</p></div>
+    <div class="card"><h4>Calibration model (Decision Agent)</h4><p class="muted">Expanded take = observed ÷ coverage. Adjustments are multiplicative but each is capped (β ≤ 2.5, environment ±40%, gear ±30%) and combined through a single bounded factor, so they cannot multiply independently into a closure signal. Every factor is shown in the audit panel.</p></div>
+    <div class="card"><h4>ITS running-sum tracker</h4><p class="muted">Cumulative expanded take over the ITS window vs. (annual ITS × window years). P(exceed before window close) uses the posterior predictive for the remaining years. Alert at 0.25 per the working-group trigger specification. ITS values shown are placeholders.</p></div>
+    <div class="card"><h4>Known pitfalls</h4><ul class="muted" style="padding-left:18px;margin:0"><li>Spreadsheet NEGBINOM.DIST truncates non-integer shape.</li><li>β-scaler × environmental index can compound; use one bounded factor.</li><li>Utility formulas break across species with very different natural abundances; scale by species median.</li><li>Rolling 5-year maximum ITS is legally practical but not population-referenced; PBR- or λ-anchored thresholds are the more defensible direction.</li></ul></div>
+  </section>
+  <section class="panel"><h3>Still to be confirmed before Council use</h3><div id="smeList"></div></section>
+  <section class="panel tech"><h3>Additional features in this build beyond the v18.2 decision agent</h3>
+    <div class="grid g3">
+      <div class="card"><h4>Pipeline JSON ingestion</h4><p class="muted">Load any pipeline_output.json from a Quarto run; the whole app re-renders. No data is typed in by hand.</p></div>
+      <div class="card"><h4>Summary tables with reference check</h4><p class="muted">Tables 2/2b/2c side-by-side with the reference workbook values for QA of the automated pipeline.</p></div>
+      <div class="card"><h4>Auto-populated causal tree</h4><p class="muted">The workshop's decision tree is walked with evidence from the tables; only two nodes need expert input.</p></div>
+      <div class="card"><h4>Four workshop review areas</h4><p class="muted">Spatial effort, gear, ocean and demographic context tables attached to each species' anomaly card.</p></div>
+      <div class="card"><h4>Fisher behaviour panel</h4><p class="muted">Post-interaction movement and trip-limit responses, previously absent from the decision agent.</p></div>
+      <div class="card"><h4>ITS running-sum tracker</h4><p class="muted">Five-year cumulative take with probability of exceeding the ITS before the window closes.</p></div>
+      <div class="card"><h4>α calibration table</h4><p class="muted">Historical flag rate at each significance level, for the SDM elicitation of gate thresholds.</p></div>
+      <div class="card"><h4>SAFE section export</h4><p class="muted">One click writes §3.3.2 — aggregation chapter, species accounts, Tables 2/2b/2c, methods — as a Word document or a Google Doc.</p></div>
+      <div class="card"><h4>Narrative drafts with provenance</h4><p class="muted">Editable per-species paragraphs stamped with their source (template or model) and export to Markdown.</p></div>
+      <div class="card"><h4>Bounded calibration audit</h4><p class="muted">Every adjustment factor and its cap is listed so the calibrated take can be defended line by line.</p></div>
+    </div>
+  </section>
+</div>
+
+</main>
+</div>

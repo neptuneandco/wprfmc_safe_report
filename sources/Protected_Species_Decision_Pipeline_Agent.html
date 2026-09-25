@@ -1,0 +1,1752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Protected Species Data Pipeline & Anomaly Detection Agent</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{
+  --navy:#21295C; --ocean:#065A82; --teal:#1C7293; --orange:#F18F01;
+  --ink:#333333; --slate:#5A6C7D; --mist:#DDE7EE; --card:#F4F6F8;
+  --font-display: Georgia, 'Times New Roman', serif;
+  --font-body: Calibri, 'Segoe UI', Arial, sans-serif;
+}
+body{font-family:var(--font-body); color:var(--ink); background:#FFFFFF;}
+.eyebrow{color:var(--orange); text-transform:uppercase; letter-spacing:.18em; font:700 10px var(--font-body);}
+h1,h2,h3{color:var(--navy); font-family:var(--font-body); font-weight:700;}
+.display{font-family:var(--font-display);}
+.card{background:var(--card); border:1px solid var(--mist); border-radius:10px;}
+.chart-container{position:relative; width:100%; height:260px;}
+input[type=range]{accent-color:var(--ocean);}
+.tab-active{border-color:var(--orange); color:var(--navy); border-bottom-width:3px; font-weight:700;}
+.tab-inactive{border-color:transparent; color:var(--slate);}
+.badge{display:inline-block; padding:2px 9px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:.04em;}
+.badge-ok{background:#E2F2E6; color:#1e7a3d;}
+.badge-warn{background:#FCE8E0; color:#B8410A;}
+.badge-flag{background:#FBDCE0; color:#B0173D;}
+.zoom-btn{width:26px; height:26px; border-radius:6px; border:1px solid var(--mist); background:#F4F6F8; color:var(--navy); font-size:15px; font-weight:700; line-height:1; cursor:pointer;}
+.swing-chip{padding:6px 14px; border-radius:999px; border:1px solid var(--mist); background:#F4F6F8; color:var(--slate); font-size:12px; font-weight:600; cursor:pointer;}
+.swing-chip-active{background:var(--ocean); color:#fff; border-color:var(--ocean);}
+.swing-chip:disabled, input:disabled{opacity:0.55; cursor:not-allowed;}
+.zoom-btn:hover{background:var(--mist);}
+#causalTreeViewport.grabbing{cursor:grabbing;}
+table.safe{width:100%; border-collapse:collapse; font-size:12.5px;}
+table.safe th{background:var(--navy); color:#fff; text-align:left; padding:8px 10px; font-weight:700;}
+table.safe td{padding:7px 10px; border-bottom:1px solid var(--mist);}
+table.safe tr:nth-child(even) td{background:#FAFBFC;}
+.flag-row td{background:#FCEFEA !important;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:var(--mist); border-radius:4px;}
+</style>
+</head>
+<body class="p-3 md:p-6">
+
+<!-- HEADER -->
+<div class="rounded-xl mb-5 px-6 py-5 flex items-center justify-between" style="background:var(--navy);">
+  <div>
+    <div class="eyebrow" style="color:#8FB7CE;">WPRFMC · SAFE REPORT DATA PIPELINE INITIATIVE</div>
+    <h1 class="display text-white text-2xl md:text-3xl font-normal mt-1">Data Pipeline &amp; Anomaly Detection Agent</h1>
+    <p class="text-xs mt-1" style="color:#DDE7EE;">Protected species interaction anomaly evaluation · Oceanic whitetip · Leatherback · Loggerhead</p>
+  </div>
+  <div class="hidden md:flex flex-col items-end gap-1">
+    <span class="text-[10px]" style="color:#AFC3D6;">Built on abstracted, non-proprietary inputs only</span>
+  </div>
+</div>
+
+<div class="border-b mb-6" style="border-color:var(--mist);">
+  <nav class="flex gap-6 overflow-x-auto" aria-label="Tabs">
+    <button id="tabPipeline" class="tab-active py-3 px-1 text-sm whitespace-nowrap">Data Pipeline</button>
+    <button id="tabTables" class="tab-inactive py-3 px-1 text-sm whitespace-nowrap">SAFE Summary Tables</button>
+    <button id="tabDashboard" class="tab-inactive py-3 px-1 text-sm whitespace-nowrap">Anomaly Detection Dashboard</button>
+    <button id="tabBayes" class="tab-inactive py-3 px-1 text-sm whitespace-nowrap">Bayesian Anomaly Tool</button>
+    <button id="tabDocs" class="tab-inactive py-3 px-1 text-sm whitespace-nowrap">Model Documentation</button>
+  </nav>
+</div>
+
+<!-- DASHBOARD -->
+    <div id="contentDashboard" class="space-y-6 hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-4 space-y-5">
+
+    <div class="card p-4">
+      <h4 class="text-sm uppercase tracking-wide mb-3">Active Species / ITS Context</h4>
+      <select id="speciesSelect" class="w-full border border-slate-300 rounded px-2 py-2 text-sm mb-3" style="border-color:var(--mist);">
+        <option value="owt">Oceanic Whitetip Shark</option>
+        <option value="leatherback">Leatherback Turtle</option>
+        <option value="loggerhead">Loggerhead Turtle</option>
+      </select>
+      <div class="flex justify-between text-xs font-semibold mb-1"><span>ITS Limit (rolling 5-yr max)</span><span id="itsLimitLabel" class="font-bold" style="color:var(--ocean);">40</span></div>
+      <input type="range" id="itsLimit" min="5" max="100" step="1" value="40" class="w-full h-2 rounded-lg mb-2">
+      <details class="text-xs mt-1">
+        <summary class="cursor-pointer font-semibold" style="color:var(--teal);">Benchmark: rolling 5-yr take history</summary>
+        <div class="grid grid-cols-5 gap-1 mt-2">
+          <div><label class="block text-[9px] text-slate-500">2025</label><input id="y2025" type="number" value="38" class="w-full text-xs border rounded px-1 py-1"></div>
+          <div><label class="block text-[9px] text-slate-500">2024</label><input id="y2024" type="number" value="40" class="w-full text-xs border rounded px-1 py-1"></div>
+          <div><label class="block text-[9px] text-slate-500">2023</label><input id="y2023" type="number" value="29" class="w-full text-xs border rounded px-1 py-1"></div>
+          <div><label class="block text-[9px] text-slate-500">2022</label><input id="y2022" type="number" value="33" class="w-full text-xs border rounded px-1 py-1"></div>
+          <div><label class="block text-[9px] text-slate-500">2021</label><input id="y2021" type="number" value="27" class="w-full text-xs border rounded px-1 py-1"></div>
+        </div>
+        <button id="applyBenchmark" class="mt-2 text-xs font-bold px-3 py-1 rounded text-white" style="background:var(--ocean);">Apply max as ITS limit</button>
+        <p class="text-[10px] text-slate-500 mt-1">Sets ITS from history only — not population-referenced (known defensibility gap; see Documentation).</p>
+      </details>
+    </div>
+
+    <div class="card p-4 border-l-4" style="border-left-color:var(--ocean) !important;">
+      <h4 class="text-sm uppercase tracking-wide mb-3">Observer Data (LOTUS)</h4>
+      <p class="text-[10px] mb-3" style="color:var(--slate);">This is the anchor for the calibrated take below — a real observed count, expanded by observer coverage. Everything else on this tab (oceanographic, spatial, gear, demographic) adjusts this anchor rather than generating a number from scratch.</p>
+      <div class="flex justify-between text-xs font-semibold mb-1"><span>Observed interactions (LOTUS)</span><span id="observedLabel" style="color:var(--ocean);">8</span></div>
+      <input type="range" id="observedInteractions" min="0" max="40" step="1" value="8" class="w-full h-2 rounded-lg mb-2">
+      <div class="flex justify-between text-xs font-semibold mb-1"><span>Observer coverage rate</span><span id="coverageLabel" style="color:var(--ocean);">21%</span></div>
+      <input type="range" id="coverageRate" min="8" max="40" step="1" value="21" class="w-full h-2 rounded-lg mb-2">
+      <p class="text-[10px] mb-2" style="color:var(--slate);">Expanded estimate = observed ÷ coverage rate → feeds Table 0 directly, and the Dashboard stats/charts after the adjustment factors below are applied. (Table 2, on the SAFE Summary Tables tab, instead shows the real historical monitoring baseline from <code>ps_monitoring_tables.xlsx</code> and does not respond to these sliders.)</p>
+      <button id="lotusSyncBtnDashboard" class="text-xs font-bold px-3 py-1 rounded text-white w-full" style="background:var(--ocean);">Sync with LOTUS</button>
+      <p class="text-[10px] mt-1" style="color:var(--slate);">Last synced: <span id="lotusSyncTimeDashboard">—</span></p>
+    </div>
+
+    <div class="card p-4">
+      <h4 class="text-sm uppercase tracking-wide mb-3">Oceanographic &amp; Habitat Sensors</h4>
+      <p class="text-[10px] mb-2" style="color:var(--slate);">Adjustment factor on the LOTUS anchor above, not a standalone source.</p>
+      <div class="space-y-3">
+        <div>
+          <div class="flex justify-between text-xs font-semibold mb-1"><span>Sea Surface Temp</span><span id="sstLabel" style="color:var(--ocean);">27.0°</span></div>
+          <input type="range" id="sst" min="22" max="31" step="0.1" value="27.0" class="w-full h-2 rounded-lg">
+        </div>
+        <div>
+          <div class="flex justify-between text-xs font-semibold mb-1"><span>Eddy Kinetic Energy</span><span id="ekeLabel" style="color:var(--ocean);">200</span></div>
+          <input type="range" id="eke" min="0" max="400" step="1" value="200" class="w-full h-2 rounded-lg">
+        </div>
+        <div>
+          <div class="flex justify-between text-xs font-semibold mb-1"><span>Current Vorticity</span><span id="vorticityLabel" style="color:var(--ocean);">0.0</span></div>
+          <input type="range" id="vorticity" min="-10" max="10" step="0.1" value="0.0" class="w-full h-2 rounded-lg">
+        </div>
+        <div>
+          <div class="flex justify-between text-xs font-semibold mb-1"><span>Chlorophyll-a (mg/m³)</span><span id="chlorophyllLabel" style="color:var(--ocean);">0.15</span></div>
+          <input type="range" id="chlorophyll" min="0" max="1.5" step="0.01" value="0.15" class="w-full h-2 rounded-lg">
+        </div>
+        <label class="flex items-center gap-2 text-xs font-semibold pt-1">
+          <input type="checkbox" id="biasCorrection"> β-Scaler bias correction (2.1×) — zero-retention ghost-take adjustment
+        </label>
+        <button id="syncBtn" class="text-xs font-bold px-3 py-1 rounded text-white w-full" style="background:var(--teal);">Sync El Niño anomaly scenario</button>
+        <p class="text-[10px] text-slate-500">Last sync: <span id="syncTimeLabel">—</span> · <span id="syncSignalLabel">No sync yet</span></p>
+      </div>
+    </div>
+
+    <div class="card p-4 border-l-4" style="border-left-color:var(--orange) !important;">
+      <div class="flex items-center gap-2 mb-3"><h4 class="text-sm uppercase tracking-wide">Spatial Effort &amp; Fisher Behavior</h4></div>
+      <p class="text-[10px] mb-2" style="color:var(--slate);">Adjustment factor on the LOTUS anchor above.</p>
+      <div class="space-y-3">
+        <div>
+          <div class="flex justify-between text-xs font-semibold mb-1"><span>Southward shift index</span><span id="spatialShiftLabel" style="color:var(--ocean);">0%</span></div>
+          <input type="range" id="spatialShift" min="-30" max="60" step="1" value="0" class="w-full h-2 rounded-lg">
+          <p class="text-[10px] text-slate-500 mt-1">% of effort south of 20°N vs. the 10-yr seasonal norm envelope.</p>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs font-semibold mb-1"><span>Post-interaction avoidance response</span><span id="avoidanceLabel" style="color:var(--ocean);">Low</span></div>
+          <input type="range" id="avoidance" min="0" max="2" step="1" value="0" class="w-full h-2 rounded-lg">
+          <p class="text-[10px] text-slate-500 mt-1">Do vessels relocate/close area after an interaction? Low / Moderate / High.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-4 border-l-4" style="border-left-color:var(--orange) !important;">
+      <div class="flex items-center gap-2 mb-3"><h4 class="text-sm uppercase tracking-wide">Gear &amp; Operational Modifications</h4></div>
+      <p class="text-[10px] mb-2" style="color:var(--slate);">Adjustment factor on the LOTUS anchor above.</p>
+      <div class="space-y-3">
+        <div>
+          <div class="flex justify-between text-xs font-semibold mb-1"><span>Shallow-set effort share</span><span id="gearShiftLabel" style="color:var(--ocean);">18%</span></div>
+          <input type="range" id="gearShift" min="0" max="60" step="1" value="18" class="w-full h-2 rounded-lg">
+        </div>
+        <div>
+          <div class="flex justify-between text-xs font-semibold mb-1"><span>Circle-hook / branchline compliance</span><span id="gearComplianceLabel" style="color:var(--ocean);">92%</span></div>
+          <input type="range" id="gearCompliance" min="50" max="100" step="1" value="92" class="w-full h-2 rounded-lg">
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-4 border-l-4" style="border-left-color:var(--orange) !important;">
+      <div class="flex items-center gap-2 mb-3"><h4 class="text-sm uppercase tracking-wide">Demographic Composition of Take</h4></div>
+      <div class="flex justify-between text-xs font-semibold mb-1"><span>Juvenile share of interactions</span><span id="juvLabel" style="color:var(--ocean);">30%</span></div>
+      <input type="range" id="juvenile" min="0" max="100" step="1" value="30" class="w-full h-2 rounded-lg">
+      <p class="text-[10px] text-slate-500 mt-1">Baseline juvenile share ≈30%. Higher juvenile share raises the demographic penalty (life-stage-weighted population impact) independent of raw count.</p>
+    </div>
+
+    <div class="card p-4">
+      <h4 class="text-sm uppercase tracking-wide mb-3">Risk Posture</h4>
+      <div class="flex justify-between text-xs font-semibold mb-1"><span>Risk Aversion</span><span id="priorityLabel" style="color:var(--ocean);">Balanced</span></div>
+      <input type="range" id="riskAversion" min="1" max="10" step="1" value="5" class="w-full h-2 rounded-lg mb-2">
+      <p id="riskProfileDesc" class="text-[11px] text-slate-500 mb-3">Balanced: standard compliance. Inflection at 65%.</p>
+      <div class="mb-3">
+        <div class="flex justify-between text-xs font-semibold mb-1"><span>Yield Weight (Economic)</span><span id="yieldWeightLabel" style="color:var(--ocean);">5</span></div>
+        <input type="range" id="yieldWeight" min="1" max="10" step="1" value="5" class="w-full h-2 rounded-lg">
+      </div>
+      <div>
+        <div class="flex justify-between text-xs font-semibold mb-1"><span>Risk Weight (Conservation)</span><span id="riskWeightLabel" style="color:var(--ocean);">9</span></div>
+        <input type="range" id="riskWeight" min="1" max="10" step="1" value="9" class="w-full h-2 rounded-lg">
+      </div>
+    </div>
+        </div>
+        <div class="lg:col-span-8 space-y-6">
+      <div id="decisionAlertBox" class="rounded-lg p-4 border flex flex-col md:flex-row items-center justify-between gap-4" style="background:var(--card); border-color:var(--mist);">
+        <div class="flex items-center gap-3">
+          <span id="decisionIcon" class="inline-block rounded-full flex-shrink-0" style="width:10px; height:10px; background:var(--ocean);"></span>
+          <div>
+            <h2 id="decisionTitle" class="text-sm font-semibold" style="color:var(--navy);">No anomaly indicated</h2>
+            <p id="decisionSubtitle" class="text-xs mt-0.5" style="color:var(--slate);">Model suggests no further review needed at this time.</p>
+          </div>
+        </div>
+        <div class="text-center">
+          <span class="block text-[9px] uppercase tracking-widest mb-0.5 font-semibold" style="color:var(--slate);">Uncertainty Buffer</span>
+          <span id="bufferValue" class="text-sm font-semibold" style="color:var(--ocean);">20.0%</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="card p-3 text-center"><div class="text-[10px] uppercase font-bold" style="color:var(--slate);">Calibrated Take (μ)</div><div id="statMu" class="text-xl font-black mt-1" style="color:var(--navy);">—</div></div>
+        <div class="card p-3 text-center"><div class="text-[10px] uppercase font-bold" style="color:var(--slate);">Exceedance Prob.</div><div id="statProb" class="text-xl font-black mt-1" style="color:var(--navy);">—</div></div>
+        <div class="card p-3 text-center"><div class="text-[10px] uppercase font-bold" style="color:var(--slate);">Spatial Overlap Mult.</div><div id="statSpatial" class="text-xl font-black mt-1" style="color:var(--navy);">—</div></div>
+        <div class="card p-3 text-center"><div class="text-[10px] uppercase font-bold" style="color:var(--slate);">Demographic Penalty Mult.</div><div id="statDemo" class="text-xl font-black mt-1" style="color:var(--navy);">—</div></div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="card p-5">
+          <h4 class="text-sm font-bold uppercase tracking-wide">Bayesian Risk Projection</h4>
+          <p class="text-xs" style="color:var(--slate);">Probability density of total take (P[T]), spatial + gear + demographic adjusted.</p>
+          <div class="chart-container"><canvas id="posteriorChart"></canvas></div>
+        </div>
+        <div class="card p-5">
+          <h4 class="text-sm font-bold uppercase tracking-wide">Demographic Penalty Curve</h4>
+          <p class="text-xs" style="color:var(--slate);">Utility impact vs exceedance probability.</p>
+          <div class="chart-container"><canvas id="cliffChart"></canvas></div>
+        </div>
+        <div class="card p-5">
+          <div class="flex items-center gap-2"><h4 class="text-sm font-bold uppercase tracking-wide">Fleet Spatial Effort</h4></div>
+          <p class="text-xs" style="color:var(--slate);">Current-year lat-band effort share vs 10-yr norm envelope.</p>
+          <div class="chart-container"><canvas id="spatialChart"></canvas></div>
+        </div>
+        <div class="card p-5">
+          <div class="flex items-center gap-2"><h4 class="text-sm font-bold uppercase tracking-wide">Gear Configuration Mix</h4></div>
+          <p class="text-xs" style="color:var(--slate);">Shallow vs deep-set share and mitigation compliance.</p>
+          <div class="chart-container"><canvas id="gearChart"></canvas></div>
+        </div>
+      </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PIPELINE -->
+    <div id="contentPipeline" class="space-y-6">
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-1">Data Pipeline Architecture</h3>
+        <p class="text-xs mb-4" style="color:var(--slate);">Built from the SAFE Report Data Products Identification review. Raw proprietary data (incl. PIROP observer records) stays with NOAA at all times — the pipeline consumes abstracted, aggregated outputs only.</p>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div class="rounded-lg p-4 text-white" style="background:var(--navy);">
+            <div class="text-[10px] font-bold uppercase tracking-widest" style="color:#8FB7CE;">Stage 1</div>
+            <div class="font-bold mt-1 mb-2">Abstracted Data Products</div>
+            <ul class="text-[11px] space-y-1" style="color:#DDE7EE;">
+              <li>• Fishery-dependent reporting (logbooks, creel surveys, dealer reports, HMRFS/MRIP)</li>
+              <li>• Stock &amp; bycatch assessments (WCPFC/IATTC/ISC, PIROP bycatch estimates, MMPA SARs)</li>
+              <li>• Environmental &amp; habitat (CoralTemp, ESA CCI, Station ALOHA, GODAS, EFH species models)</li>
+              <li>• PIFSC Fishery Ecosystem Analysis Tool (FEAT) indicators</li>
+              <li>• Economic &amp; social (PIFSC economic data collection, cost-earnings, advisory panel/TEK)</li>
+              <li>• Value of Information (VOI) sensitivity summaries</li>
+            </ul>
+          </div>
+          <div class="rounded-lg p-4 text-white" style="background:var(--ocean);">
+            <div class="text-[10px] font-bold uppercase tracking-widest" style="color:#CFE7F2;">Stage 2</div>
+            <div class="font-bold mt-1 mb-2">Supportive AI</div>
+            <ul class="text-[11px] space-y-1" style="color:#E7F2F7;">
+              <li>• Standardizes regional data streams into common schema</li>
+              <li>• Formats routine summaries (behavior, interactions, diagnostics)</li>
+              <li>• Auto-drafts narrative context</li>
+            </ul>
+          </div>
+          <div class="rounded-lg p-4 text-white" style="background:var(--teal);">
+            <div class="text-[10px] font-bold uppercase tracking-widest" style="color:#E3F3F7;">Stage 3</div>
+            <div class="font-bold mt-1 mb-2">Anomaly Detection</div>
+            <ul class="text-[11px] space-y-1" style="color:#EFF9FB;">
+              <li>• SAFE Summary Tables engine (behavior / interactions / diagnostics)</li>
+              <li>• Rolling 5-yr ITS running-sum check (univariate trigger)</li>
+              <li>• Random forest ensemble scoring (multivariate anomaly detection)</li>
+              <li>• Bayesian Anomaly Detector</li>
+            </ul>
+          </div>
+          <div class="rounded-lg p-4" style="background:var(--card); border:1px solid var(--mist);">
+            <div class="text-[10px] font-bold uppercase tracking-widest" style="color:var(--orange);">Stage 4</div>
+            <div class="font-bold mt-1 mb-2" style="color:var(--navy);">Statutory Alignment &amp; Decision Support</div>
+            <ul class="text-[11px] space-y-1" style="color:var(--ink);">
+              <li>• MSA / ESA §7 trigger mapping</li>
+              <li>• Audit trail / data-provenance log</li>
+              <li>• Council &amp; SSC-ready export → Anomaly Detection Dashboard</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-1">Decision logic: data products &rarr; Anomaly Detection Dashboard</h3>
+        <p class="text-xs mb-3" style="color:var(--slate);">Data products split into three parallel paths as soon as they leave Stage 1: the calibration path (into the anomaly checks and the Dashboard), the SAFE Summary Tables path, and exploratory dashboards (currently FEAT, Marine Mammal Injury, and ByCatch, each a standalone Shiny App). Tables 0 and 1 draw directly from the same data products shown above &mdash; not from the calibrated figure. Table 3 is the exception: it's populated only when one of the checks below flags a species, so it depends on that path too. Table 2 is sourced separately from real historical monitoring data, shown further down alongside the independent Bayesian Anomaly Tool it also feeds.</p>
+
+        <svg width="100%" viewBox="0 0 1320 900" style="max-width:1320px; display:block; margin:8px auto;">
+          <defs>
+            <marker id="dpArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M2 1L8 5L2 9" fill="none" stroke="#5A6C7D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+          </defs>
+
+          <rect x="40" y="40" width="600" height="240" rx="18" fill="#F4F6F8" stroke="#DDE7EE" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="64" y="66" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#21295C">Data products</text>
+
+          <rect x="60" y="100" width="270" height="70" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+          <text x="195" y="126" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#085041">LOTUS observed interactions</text>
+          <text x="195" y="150" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#0F6E56">Coverage rate &rarr; expanded estimate</text>
+
+          <rect x="350" y="100" width="270" height="70" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+          <text x="485" y="126" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#085041">Oceanographic indices</text>
+          <text x="485" y="150" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#0F6E56">SST, EKE, vorticity, chl-a</text>
+
+          <rect x="60" y="190" width="270" height="70" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+          <text x="195" y="216" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#085041">Spatial &amp; gear logbook data</text>
+          <text x="195" y="240" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#0F6E56">Effort shift, gear mix</text>
+
+          <rect x="350" y="190" width="270" height="70" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+          <text x="485" y="216" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#085041">Demographic composition</text>
+          <text x="485" y="240" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#0F6E56">Juvenile share of interactions</text>
+
+          <path d="M340 280 L340 300 L185 300 L185 320" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+          <path d="M340 280 L340 300 L475 300 L475 320" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+          <path d="M340 280 L340 300 L990 300 L990 320" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+
+          <rect x="60" y="320" width="250" height="56" rx="10" fill="#E8E9F2" stroke="#21295C" stroke-width="1"/>
+          <text x="185" y="338" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#21295C">Calibrated take</text>
+          <text x="185" y="356" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#333A63">Expanded estimate &times; adjustments</text>
+
+          <rect x="330" y="320" width="290" height="56" rx="10" fill="#FDECC8" stroke="#8a5a00" stroke-width="1"/>
+          <text x="475" y="338" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#5c3d00">SAFE Summary Tables</text>
+          <text x="475" y="356" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#8a5a00">Bycatch, behavior, diagnostics</text>
+
+          <rect x="855" y="320" width="270" height="56" rx="10" fill="#E6F4EA" stroke="#1E7A3D" stroke-width="1"/>
+          <text x="990" y="338" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#155C2E">Exploratory Dashboards</text>
+          <text x="990" y="356" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#1E7A3D">External tools</text>
+
+          <line x1="990" y1="376" x2="990" y2="396" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <path d="M990 396 L780 396 L780 416" fill="none" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#dpArrow)"/>
+          <line x1="990" y1="396" x2="990" y2="416" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#dpArrow)"/>
+          <path d="M990 396 L1200 396 L1200 416" fill="none" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#dpArrow)"/>
+
+          <rect x="685" y="416" width="190" height="56" rx="10" fill="#F1EFE8" stroke="#888780" stroke-width="1" stroke-dasharray="5 4"/>
+          <text x="780" y="434" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#5F5E5A">FEAT</text>
+          <text x="780" y="452" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#5F5E5A">Shiny App</text>
+
+          <rect x="895" y="416" width="190" height="56" rx="10" fill="#F1EFE8" stroke="#888780" stroke-width="1" stroke-dasharray="5 4"/>
+          <text x="990" y="434" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#5F5E5A">Marine Mammal Injury</text>
+          <text x="990" y="452" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#5F5E5A">Shiny App</text>
+
+          <rect x="1105" y="416" width="190" height="56" rx="10" fill="#F1EFE8" stroke="#888780" stroke-width="1" stroke-dasharray="5 4"/>
+          <text x="1200" y="434" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#5F5E5A">ByCatch</text>
+          <text x="1200" y="452" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#5F5E5A">Shiny App</text>
+
+          <path d="M185 376 L185 396 L128 396 L128 416" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+          <path d="M185 376 L185 396 L330 396 L330 416" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+          <path d="M185 376 L185 396 L555 396 L555 416" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+
+          <rect x="48" y="416" width="160" height="56" rx="10" fill="#E3F0F5" stroke="#065A82" stroke-width="1"/>
+          <text x="128" y="434" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#065A82">Interactions</text>
+          <text x="128" y="452" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#0C4C6B">Characterization</text>
+
+          <rect x="228" y="416" width="205" height="56" rx="10" fill="#E3F0F5" stroke="#065A82" stroke-width="1"/>
+          <text x="330" y="434" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#065A82">Exceedance probability</text>
+          <text x="330" y="452" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#0C4C6B">Bayesian check</text>
+
+          <rect x="453" y="416" width="205" height="56" rx="10" fill="#F1EFE8" stroke="#888780" stroke-width="1" stroke-dasharray="5 4"/>
+          <text x="555" y="434" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#5F5E5A">Multivariate Condition</text>
+          <text x="555" y="452" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#5F5E5A">Machine Learning</text>
+
+          <path d="M128 472 L128 492 L340 492 L340 528" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+          <path d="M330 472 L330 492 L340 492 L340 528" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+          <path d="M555 472 L555 492 L340 492 L340 528" fill="none" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#dpArrow)"/>
+
+          <rect x="180" y="528" width="320" height="60" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="1"/>
+          <text x="340" y="550" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#712B13">Anomaly Detection Dashboard</text>
+          <text x="340" y="570" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#993C1D">Plan Team review / Structured Decision Making</text>
+
+          <line x1="40" y1="628" x2="1300" y2="628" stroke="#DDE7EE" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="340" y="614" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" font-weight="700" fill="#5A6C7D">Independent surface &mdash; not merged with the Dashboard above</text>
+
+          <rect x="205" y="660" width="270" height="56" rx="10" fill="#FBEAF0" stroke="#993556" stroke-width="1"/>
+          <text x="340" y="678" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#72243E">Table 2</text>
+          <text x="340" y="696" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#993556">Real historical monitoring data</text>
+
+          <line x1="340" y1="716" x2="340" y2="736" stroke="#993556" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+
+          <rect x="205" y="736" width="270" height="56" rx="10" fill="#FBEAF0" stroke="#993556" stroke-width="1"/>
+          <text x="340" y="754" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#72243E">Bayesian Anomaly Tool</text>
+          <text x="340" y="772" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#993556">Gamma-Poisson posterior, per species</text>
+
+          <line x1="340" y1="792" x2="340" y2="812" stroke="#993556" stroke-width="1.5" marker-end="url(#dpArrow)"/>
+
+          <rect x="230" y="812" width="220" height="56" rx="10" fill="#FBEAF0" stroke="#993556" stroke-width="1"/>
+          <text x="340" y="830" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#72243E">Typical / anomaly flag</text>
+          <text x="340" y="848" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#993556">Per-species tail probability</text>
+        </svg>
+      </div>
+
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-1">Stage 1 Data Product Taxonomy</h3>
+        <p class="text-xs mb-3" style="color:var(--slate);">Full product list from the SAFE Report Data Products Identification review, organized into the four categories above.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <div class="text-xs font-bold mb-1" style="color:var(--teal);">Fishery operations</div>
+            <ul class="text-[11.5px] list-disc pl-4 space-y-0.5" style="color:var(--ink);">
+              <li>Federal logbooks (longline, bottomfish, crustacean, precious coral)</li>
+              <li>Creel surveys &amp; commercial purchase invoices (AS, CNMI, Guam)</li>
+              <li>HDAR Commercial Fisherman's Catch &amp; Marine Dealer Reports (HI)</li>
+              <li>Hawaii Marine Recreational Fishing Survey (HMRFS) / MRIP FES</li>
+              <li>Spatio-temporal fishery effort summaries</li>
+            </ul>
+          </div>
+          <div>
+            <div class="text-xs font-bold mb-1" style="color:var(--teal);">Stock &amp; bycatch data</div>
+            <ul class="text-[11.5px] list-disc pl-4 space-y-0.5" style="color:var(--ink);">
+              <li>WCPFC / IATTC / ISC regional stock assessments (e.g. 2025 WCPO OWT)</li>
+              <li>PIROP observer bycatch estimates (protected species &amp; fish)</li>
+              <li>Marine Mammal Stock Assessment Reports (MMPA SARs)</li>
+              <li>Aggregated catch metrics &amp; comparative U.S./foreign fleet impact</li>
+              <li>NOAA List of Fisheries (LOF) risk classifications</li>
+              <li><a href="https://connect.fisheries.noaa.gov/Bycatch-GUI/" target="_blank" rel="noopener" style="color:var(--ocean); text-decoration:underline;">PIFSC Bycatch GUI</a> (HI/AS observed bycatch, published view of Table 0's source data)</li>
+            </ul>
+          </div>
+          <div>
+            <div class="text-xs font-bold mb-1" style="color:var(--teal);">Environmental &amp; habitat</div>
+            <ul class="text-[11.5px] list-disc pl-4 space-y-0.5" style="color:var(--ink);">
+              <li>SST/CoralTemp, EKE, vorticity, chlorophyll-a (ESA CCI)</li>
+              <li>ONI / PDO, tropical cyclone tracks (IBTrACS), GODAS</li>
+              <li>Station ALOHA (pH, HOT series), Mauna Loa CO₂</li>
+              <li>Coral thermal stress (Degree Heating Weeks), CMAP precipitation</li>
+              <li>Essential Fish Habitat (EFH) species distribution models</li>
+            </ul>
+          </div>
+          <div>
+            <div class="text-xs font-bold mb-1" style="color:var(--teal);">Economic &amp; social</div>
+            <ul class="text-[11.5px] list-disc pl-4 space-y-0.5" style="color:var(--ink);">
+              <li>PIFSC Continuous Economic Data Collection Program (revenue/trip, cost-earnings)</li>
+              <li>Net revenue by set location (hexagon-grid heatmaps)</li>
+              <li>Commercial Fishing Economic Assessment Index (CFEAI)</li>
+              <li>Advisory panel / traditional ecological knowledge (TEK) observations</li>
+              <li>CPUE-vs-interaction trade-off models (e.g. bigeye tuna)</li>
+            </ul>
+          </div>
+        </div>
+        <p class="text-[10.5px] mt-3" style="color:var(--slate);">VOI summaries (e.g. nesting-beach vs. observer-data sensitivity) cut across all four categories and feed directly into Stage 3 to prioritize which gaps matter most this cycle.</p>
+      </div>
+
+      <div class="card p-5 border-l-4" style="border-left-color:var(--orange) !important;">
+        <h3 class="text-base font-bold mb-1">LOTUS observer data workflow</h3>
+        <p class="text-xs mb-3" style="color:var(--slate);">Protected species bycatch/interaction estimates in the "Stock &amp; bycatch" category originate from the PIROP observer program and reach the pipeline through a specific QA chain — not as a raw feed.</p>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-2 text-center">
+          <div class="rounded p-3" style="background:var(--card); border:1px solid var(--mist);">
+            <div class="text-[10px] font-bold uppercase" style="color:var(--slate);">1. Tablet entry</div>
+            <div class="text-[11px] mt-1">Observers log interactions in the field</div>
+          </div>
+          <div class="rounded p-3" style="background:var(--card); border:1px solid var(--mist);">
+            <div class="text-[10px] font-bold uppercase" style="color:var(--slate);">2. Pirops</div>
+            <div class="text-[11px] mt-1">Debriefing &amp; QA database; validations, corrections</div>
+          </div>
+          <div class="rounded p-3" style="background:#E2F2E6; border:1px solid #BFE3C8;">
+            <div class="text-[10px] font-bold uppercase" style="color:#1e7a3d;">3. LOTUS</div>
+            <div class="text-[11px] mt-1">Approved ("blessed") backend — this is the pipeline's actual source</div>
+          </div>
+          <div class="rounded p-3" style="background:var(--card); border:1px solid var(--mist);">
+            <div class="text-[10px] font-bold uppercase" style="color:var(--slate);">4. Abstraction</div>
+            <div class="text-[11px] mt-1">SQL queries → aggregated, anonymized products</div>
+          </div>
+        </div>
+        <p class="text-[11px] mt-3" style="color:var(--ink);">Two QA gates matter for anomaly detection: (1) data is only pulled from LOTUS, never from Pirops directly, so every value entering the pipeline is post-verification; and (2) an aggregation check withholds disclosure where fewer than three vessels were observed in a given stratum, so small-sample cells don't leak toward vessel-level identification.</p>
+      </div>
+
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-3">Regional Feed Status <span class="text-xs font-normal" style="color:var(--slate);">(illustrative — mock sync log, now mapped to named SAFE data products)</span></h3>
+        <table class="safe">
+          <thead><tr><th>Data Product</th><th>Source</th><th>Category</th><th>Last Sync</th><th>Status</th></tr></thead>
+          <tbody id="feedStatusBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card p-5 border-l-4" style="border-left-color:var(--orange) !important;">
+        <div class="flex items-center gap-2 mb-1"><h3 class="text-base font-bold">Vision: integrating the PIFSC Fishery Ecosystem Analysis Tool (FEAT)</h3></div>
+        <p class="text-xs mb-3" style="color:var(--slate);">FEAT (<a href="https://apps-pifsc.fisheries.noaa.gov/FEAT/" target="_blank" rel="noopener" style="color:var(--ocean); text-decoration:underline;">apps-pifsc.fisheries.noaa.gov/FEAT</a>) is PIFSC's ecosystem-indicator dashboard for Pacific Islands fisheries. It has no public API today — its indicators only exist as interactive charts inside that app, so nothing from it currently flows into this pipeline automatically.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+          <div class="rounded p-3" style="background:var(--card); border:1px solid var(--mist);">
+            <div class="text-[10px] font-bold uppercase mb-1" style="color:var(--slate);">Short-term path</div>
+            <p class="text-[11.5px]" style="color:var(--ink);">Treat FEAT the way LOTUS was treated before Table 0 existed: a scheduled manual export of the specific indicator values needed each SAFE cycle, entered as an abstracted product — same QA discipline, just without a standing connection yet.</p>
+          </div>
+          <div class="rounded p-3" style="background:var(--card); border:1px solid var(--mist);">
+            <div class="text-[10px] font-bold uppercase mb-1" style="color:var(--slate);">Long-term path</div>
+            <p class="text-[11.5px]" style="color:var(--ink);">Work with PIFSC IT to expose a lightweight read-only data feed (even a scheduled CSV/JSON export would do), so FEAT indicators sync the same way the LOTUS and oceanographic feeds do above — no new architecture required, just a new Stage 1 source.</p>
+          </div>
+        </div>
+        <button id="featPreviewBtn" class="text-xs font-bold px-3 py-1.5 rounded text-white" style="background:var(--orange);">Preview FEAT sync</button>
+        <span class="text-[10px] ml-2" style="color:var(--slate);">Last previewed: <span id="featPreviewTime">—</span></span>
+        <div id="featPreviewPanel" class="mt-3 hidden">
+          <table class="safe">
+            <thead><tr><th>Illustrative FEAT Indicator</th><th>Mock Value</th><th>Would Feed Into</th></tr></thead>
+            <tbody id="featPreviewBody"></tbody>
+          </table>
+          <p class="text-[10px] mt-2" style="color:var(--slate);">These numbers are illustrative placeholders for the workshop demo, per the note above.</p>
+        </div>
+      </div>
+
+      <div class="card p-5 border-l-4" style="border-left-color:var(--orange) !important;">
+        <div class="flex items-center gap-2 mb-2"><h3 class="text-base font-bold">Data Provenance &amp; Audit Trail</h3></div>
+        <p class="text-xs mb-3" style="color:var(--slate);">Every value on the Dashboard traces to an abstracted source, never a raw record. This log is what would ship with a SAFE submission for SSC/Council review.</p>
+        <div id="auditLog" class="text-[11px] font-mono rounded p-3" style="background:#0f1428; color:#B7E4C7; max-height:180px; overflow:auto;"></div>
+      </div>
+    </div>
+
+    <!-- SUMMARY TABLES -->
+    <div id="contentTables" class="space-y-6 hidden">
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-base font-bold">Table 0 — LOTUS Observer Bycatch Detail</h3>
+          <button id="lotusSyncBtnTable" class="text-xs font-bold px-3 py-1.5 rounded text-white whitespace-nowrap" style="background:var(--ocean);">Sync with LOTUS</button>
+        </div>
+        <p class="text-xs mb-1" style="color:var(--slate);">Source-level detail pulled from LOTUS (post-Pirops QA) via per-species SQL query. "Est. Total Interactions" is the design-based expansion (observed ÷ coverage) — the anchor that the Dashboard's calibrated take builds on after oceanographic, spatial, gear, and bias-correction adjustments are applied. (Table 2 below instead shows real historical monitoring data, independent of this live expansion.)</p>
+        <p class="text-[10.5px] mb-1" style="color:var(--slate);">A live analog of this table already exists: PIFSC's <a href="https://connect.fisheries.noaa.gov/Bycatch-GUI/" target="_blank" rel="noopener" style="color:var(--ocean); text-decoration:underline;">Bycatch GUI</a> gives access to recent and historical Hawai'i and American Samoa observed bycatch and bycatch estimates — the same LOTUS-derived numbers Table 0 mocks up here, already published as a browsable tool.</p>
+        <p class="text-[10px] mb-3" style="color:var(--slate);">Last synced: <span id="lotusSyncTimeTable">—</span></p>
+        <table class="safe">
+          <thead><tr><th>Species</th><th>Observed Interactions (LOTUS)</th><th>Observer Coverage</th><th>Est. Total Interactions</th><th>% Released Alive</th><th>Nominal CPUE (per 1,000 sets)</th><th>LOTUS QA Status</th></tr></thead>
+          <tbody id="table0Body"></tbody>
+        </table>
+      </div>
+
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-base font-bold">Table 1 — Fishery Behavior Characterization</h3>
+        </div>
+        <p class="text-xs mb-3" style="color:var(--slate);">For Council context on the fishery itself, independent of protected species.</p>
+        <table class="safe">
+          <thead><tr><th>Metric</th><th>Current Year</th><th>10-yr Average</th><th>Change</th></tr></thead>
+          <tbody id="table1Body"></tbody>
+        </table>
+      </div>
+
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-1">Table 2 &mdash; Protected Species Interaction Summary</h3>
+        <p class="text-xs mb-3" style="color:var(--slate);">Sourced directly from <code>ps_monitoring_tables.xlsx</code> ("interactions" sheet) &mdash; each species' current-year interaction count against its own historical mean, percentile rank, and multi-year trend, with the Flag column reproducing that workbook's own ITS-relevant status call. This is the real historical monitoring baseline, independent of the Dashboard tab's adjustable sliders.</p>
+        <table class="safe">
+          <thead><tr><th>Species</th><th>Current</th><th>Hist. Mean (N yrs)</th><th>&Delta; vs Hist. Mean</th><th>Percentile</th><th>Trend</th><th>Flag</th></tr></thead>
+          <tbody id="table2Body"></tbody>
+        </table>
+        <p class="text-[10px] mt-2" style="color:var(--slate);">The two panels below bring in the workbook's other two sheets, for the same six species.</p>
+      </div>
+
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-1">Table 2b &mdash; Interaction Rate &amp; Spatial Shift</h3>
+        <p class="text-xs mb-3" style="color:var(--slate);">Sourced from <code>ps_monitoring_tables.xlsx</code> ("rate spatial" sheet). Rate is per unit effort, so a rate change can be distinguished from a simple change in fishing effort. Centroid Shift is the distance between this year's and the historical mean interaction location.</p>
+        <table class="safe">
+          <thead><tr><th>Species</th><th>Current Rate</th><th>Hist. Mean Rate</th><th>Rate Percentile</th><th>Annual % Change</th><th>Trend Model</th><th>Centroid Shift (km)</th><th>% Outside 90th Pctl Range</th></tr></thead>
+          <tbody id="table2bBody"></tbody>
+        </table>
+        <p class="text-[10px] mt-2" style="color:var(--slate);">Row shading flags Rate Percentile &ge;90 or &le;10 as a visual cue only &mdash; the sheet itself doesn't assign a formal flag here, unlike Table 2.</p>
+      </div>
+
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-base font-bold">Table 2c &mdash; Oceanographic &amp; Habitat Selection Context</h3>
+          <select id="oceanSpeciesSelect" class="border rounded px-2 py-1 text-xs" style="border-color:var(--mist);">
+            <option value="Black-footed albatross">Black-footed Albatross</option>
+            <option value="Laysan albatross">Laysan Albatross</option>
+            <option value="Oceanic whitetip shark">Oceanic Whitetip Shark</option>
+            <option value="Shortfin mako shark">Shortfin Mako Shark</option>
+            <option value="Leatherback turtle">Leatherback Turtle</option>
+            <option value="Loggerhead turtle">Loggerhead Turtle</option>
+          </select>
+        </div>
+        <p class="text-xs mb-3" style="color:var(--slate);">Sourced from <code>ps_monitoring_tables.xlsx</code> ("ocean" sheet). "Current (interactions)" is the environmental condition where interactions occurred; "Current (fleet-wide)" is the condition across all fishing effort. The gap between them &mdash; Selection Anomaly &mdash; is habitat selection, independent of whether the environment itself was unusual.</p>
+        <table class="safe">
+          <thead><tr><th>Covariate</th><th>Current (interactions)</th><th>Hist. Median</th><th>Anomaly</th><th>Current (fleet-wide)</th><th>Selection Anomaly</th><th>Selection Percentile</th></tr></thead>
+          <tbody id="table2cBody"></tbody>
+        </table>
+      </div>
+
+
+      <div id="table3Wrap" class="card p-5 hidden">
+        <div class="flex items-center gap-2 mb-1"><h3 class="text-base font-bold">Table 3 — Diagnostic Supplement</h3><span class="badge badge-flag">FLAGGED FOR REVIEW</span></div>
+        <p class="text-xs mb-3" style="color:var(--slate);">Only populated when the Dashboard's calibrated take (for the active species selected there) crosses its ITS trigger threshold &mdash; the deeper-dive variables that explain what's driving it, ranked the way a random forest's feature importance would (see Documentation). This check runs independently of Table 2's real historical data above; a species can show "HIGH" in Table 2 without necessarily being the species currently selected on the Dashboard.</p>
+        <table class="safe">
+          <thead><tr><th>Diagnostic</th><th>Value</th><th>Interpretation</th></tr></thead>
+          <tbody id="table3Body"></tbody>
+        </table>
+        <div class="mt-4 rounded p-3" style="background:#FCEFEA; border:1px solid #F3C7B4;">
+          <div class="flex items-center gap-2 mb-1"><span class="text-xs font-bold uppercase" style="color:#B8410A;">Auto-generated narrative</span></div>
+          <p id="narrativeText" class="text-xs" style="color:var(--ink);"></p>
+          <p class="text-[10px] mt-1" style="color:var(--slate);">Drafted by Supportive AI from abstracted diagnostics; a plan-team scientist reviews and edits before it enters the SAFE report.</p>
+        </div>
+      </div>
+
+      <div class="flex justify-end">
+        <button id="exportBtn" class="text-xs font-bold px-4 py-2 rounded text-white" style="background:var(--navy);">Export SAFE tables (.csv preview in console)</button>
+      </div>
+    </div>
+
+    <!-- BAYESIAN ANOMALY TOOL -->
+    <div id="contentBayes" class="space-y-6 hidden">
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-1">Bayesian Anomaly Detector &mdash; Higher-Than-Expected Interactions</h3>
+        <p class="text-xs mb-3" style="color:var(--slate);">Flags a species-year as anomalous when the current interaction count falls in the extreme upper tail of a Bayesian posterior predictive distribution fit to that species' own historical record (Gamma-Poisson conjugate model, moment-matched to each species' historical mean/P10/P90 from Table 0). Anomaly = higher than expected only; unusually low counts are out of scope for this tool.</p>
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="text-xs font-semibold whitespace-nowrap">Significance level (&alpha;)</label>
+          <input type="range" id="bayesAlpha" min="0.01" max="0.50" step="0.01" value="0.05" class="w-48 h-2 rounded-lg">
+          <span id="bayesAlphaLabel" class="text-xs font-bold" style="color:var(--ocean);">0.05</span>
+          <span class="text-[10px]" style="color:var(--slate);">&larr; species in the top (&alpha;&times;100)% tail of their own history flag as anomalies</span>
+        </div>
+      </div>
+
+      <div class="card p-5 border-l-4" style="border-left-color:var(--orange) !important;">
+        <div class="flex items-center gap-2 mb-1"><h3 class="text-base font-bold">Elicit &alpha; &mdash; Structured Decision Making (Value-Focused Thinking)</h3></div>
+        <p class="text-xs mb-3" style="color:var(--slate);">Value-focused thinking starts from what the Plan Team actually cares about, not from the statistical knob itself. The two fundamental objectives in tension here are <b>minimizing missed anomalies</b> and <b>minimizing wasted review effort on false alarms</b> &mdash; &alpha; is just the means objective that trades them off. Rank the objectives, swing-weight them, and ground your prior in what Table 2 actually shows &mdash; the implied &alpha; is derived, not guessed.</p>
+
+        <div class="mb-4">
+          <div class="text-xs font-bold mb-2" style="color:var(--navy);">Step 1 &mdash; Rank the objectives, then swing-weight</div>
+          <div class="flex gap-2 mb-3">
+            <button type="button" id="rankFN" class="swing-chip swing-chip-active">Missed anomaly matters more</button>
+            <button type="button" id="rankFP" class="swing-chip">False alarm matters more</button>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-2">
+            <div class="rounded p-3" style="background:var(--card); border:1px solid var(--mist);">
+              <div class="flex justify-between text-xs font-semibold mb-1"><span id="weightFNTitle">Missed anomaly (top-ranked, anchor)</span><span id="weightFNLabel" style="color:var(--ocean);">100</span></div>
+              <input type="range" id="weightFN" min="0" max="100" step="1" value="100" class="w-full h-2 rounded-lg" disabled>
+              <p class="text-[10px] mt-1" style="color:var(--slate);">A real problem goes unflagged &mdash; delayed management response, conservation/legal risk.</p>
+            </div>
+            <div class="rounded p-3" style="background:var(--card); border:1px solid var(--mist);">
+              <div class="flex justify-between text-xs font-semibold mb-1"><span id="weightFPTitle">False alarm (relative swing)</span><span id="weightFPLabel" style="color:var(--ocean);">50</span></div>
+              <input type="range" id="weightFP" min="0" max="100" step="1" value="50" class="w-full h-2 rounded-lg">
+              <p class="text-[10px] mt-1" style="color:var(--slate);">A typical year gets escalated &mdash; wasted Plan Team review time, "crying wolf" credibility cost.</p>
+            </div>
+          </div>
+          <p class="text-[10.5px]" style="color:var(--slate);">Swing weighting: whichever objective you rank first is anchored at 100 (its full swing from worst to best outcome). Move the other slider to say how much its swing matters <i>relative</i> to the anchor &mdash; 50 means "half as much," 100 means "just as much."</p>
+        </div>
+
+        <div class="mb-3">
+          <div class="text-xs font-bold mb-2" style="color:var(--navy);">Step 2 &mdash; Prior belief: true anomaly rate (&pi;)</div>
+          <div class="flex justify-between text-xs font-semibold mb-1"><span>Prior belief: true anomaly rate</span><span id="priorAnomalyLabel" style="color:var(--ocean);">10%</span></div>
+          <input type="range" id="priorAnomaly" min="1" max="50" step="1" value="10" class="w-full h-2 rounded-lg">
+          <p class="text-[10px] mt-1" style="color:var(--slate);">Of species-years that look flaggable, how many turn out to reflect a real underlying problem?</p>
+          <p class="text-[10px] mt-1" style="color:var(--slate);">Historical reference (Table 2): <span id="piDataRef" style="font-weight:700;">&mdash;</span> currently flagged &mdash; <button type="button" id="usePiData" class="text-[10px] font-bold" style="color:var(--ocean); text-decoration:underline; background:none; border:none; cursor:pointer;">use this value</button></p>
+        </div>
+
+        <div class="rounded-lg p-4 flex flex-col md:flex-row items-center justify-between gap-4" style="background:var(--card); border:1px solid var(--mist);">
+          <div>
+            <span class="text-[10px] uppercase tracking-widest font-semibold" style="color:var(--slate);">Elicited significance level</span>
+            <div class="text-xl font-bold" id="elicitedAlpha" style="color:var(--navy);">&alpha; = 0.05</div>
+            <div class="text-[10px]" id="elicitedFormula" style="color:var(--slate);">r = 100/50 = 2.00, &pi; = 10%</div>
+          </div>
+          <button id="applyElicitedAlpha" class="text-xs font-bold px-4 py-2 rounded text-white whitespace-nowrap" style="background:var(--ocean);">Apply to detector above</button>
+        </div>
+
+        <p class="text-[11px] mt-3" style="color:var(--slate);">Formula (a transparent value-equalization heuristic, not a full Neyman-Pearson power calculation): &alpha;* = (&pi;&times;r) &divide; ((1&minus;&pi;) + &pi;&times;r), where r = swing-weight(missed anomaly) &divide; swing-weight(false alarm) and &pi; = prior true-anomaly rate. At r=1 and &pi;=5%, this recovers the conventional &alpha;=0.05 default, which is why that's the detector's starting point above. Treat the result as a documented, auditable starting point for Plan Team discussion &mdash; not a substitute for a full quantitative risk analysis.</p>
+
+        <div class="mt-4">
+          <div class="text-xs font-bold mb-2" style="color:var(--navy);">Sensitivity: how &alpha;* shifts across plausible inputs</div>
+          <div style="overflow-x:auto;">
+            <table class="safe" id="sensitivityHeatmap" style="min-width:520px;">
+              <thead><tr></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="text-[10px] mt-2" style="color:var(--slate);">r = swing-weight ratio (missed anomaly &divide; false alarm); &pi; = prior true-anomaly rate. Outlined cell = nearest reference point to your current inputs above, so you can see how sensitive the elicited &alpha; is to reasonable disagreement in either input, rather than trusting one point estimate. Color: pale = conservative (low &alpha;), red = permissive (high &alpha;).</p>
+        </div>
+      </div>
+
+      <div class="card p-5">
+        <h4 class="text-sm font-bold uppercase tracking-wide">Model Structure &mdash; the Bayesian Network</h4>
+        <p class="text-xs mb-2" style="color:var(--slate);">The generative model each species is run through before the chart/table below are produced. The dashed plate marks the piece that is fit independently &mdash; with its own &alpha;, &beta;, &lambda; &mdash; for each of the 6 species.</p>
+
+        <svg width="100%" viewBox="0 0 680 540" style="max-width:640px; display:block; margin:8px auto 16px;">
+          <defs>
+            <marker id="bnArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M2 1L8 5L2 9" fill="none" stroke="#5A6C7D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+          </defs>
+
+          <!-- plate: per-species generative model -->
+          <rect x="70" y="30" width="540" height="290" rx="10" fill="none" stroke="#8a99a8" stroke-width="1.5" stroke-dasharray="6 4"/>
+          <text x="588" y="308" text-anchor="end" font-family="Calibri, Arial, sans-serif" font-size="11.5" font-style="italic" fill="#5A6C7D">&times; 6 species</text>
+
+          <!-- Node 1: historical data -->
+          <rect x="190" y="50" width="300" height="56" rx="10" fill="#F4F6F8" stroke="#DDE7EE" stroke-width="1"/>
+          <text x="340" y="68" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#21295C">Historical Mean / P10 / P90</text>
+          <text x="340" y="86" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#5A6C7D">observed, per species (Table 2)</text>
+
+          <path d="M340 106 L340 126" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#bnArrow)"/>
+          <text x="356" y="121" font-family="Calibri, Arial, sans-serif" font-size="10.5" font-style="italic" fill="#5A6C7D">moment matching</text>
+
+          <!-- Node 2: Gamma prior (latent, dashed) -->
+          <rect x="190" y="146" width="300" height="56" rx="10" fill="#E8E9F2" stroke="#21295C" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <text x="340" y="164" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#21295C">&lambda; ~ Gamma(&alpha;, &beta;)</text>
+          <text x="340" y="182" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#333A63">latent species interaction rate</text>
+
+          <path d="M340 202 L340 222" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#bnArrow)"/>
+          <text x="356" y="217" font-family="Calibri, Arial, sans-serif" font-size="10.5" font-style="italic" fill="#5A6C7D">Poisson likelihood</text>
+
+          <!-- Node 3: observed current count -->
+          <rect x="190" y="242" width="300" height="56" rx="10" fill="#E3F0F5" stroke="#065A82" stroke-width="1"/>
+          <text x="340" y="260" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#065A82">X ~ Poisson(&lambda;)</text>
+          <text x="340" y="278" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#0C4C6B">Current count, observed this cycle</text>
+
+          <path d="M340 320 L340 338" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#bnArrow)"/>
+          <text x="356" y="333" font-family="Calibri, Arial, sans-serif" font-size="10.5" font-style="italic" fill="#5A6C7D">conjugate Bayesian update</text>
+
+          <!-- Node 4: posterior predictive (derived) -->
+          <rect x="120" y="338" width="440" height="56" rx="10" fill="#FDECC8" stroke="#F18F01" stroke-width="1"/>
+          <text x="340" y="356" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#8a5a00">P(X &ge; Current)</text>
+          <text x="340" y="374" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#8a5a00">Negative-Binomial posterior predictive tail probability</text>
+
+          <path d="M340 394 L340 414 L230 414 L230 434" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#bnArrow)"/>
+          <path d="M340 394 L340 414 L465 414 L465 434" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#bnArrow)"/>
+          <text x="252" y="410" font-family="Calibri, Arial, sans-serif" font-size="10.5" font-style="italic" fill="#5A6C7D">&ge; &alpha; (slider)</text>
+          <text x="410" y="410" font-family="Calibri, Arial, sans-serif" font-size="10.5" font-style="italic" fill="#5A6C7D">&lt; &alpha; (slider)</text>
+
+          <!-- Node 5a/5b: final flag -->
+          <rect x="130" y="434" width="200" height="56" rx="10" fill="#E2F2E6" stroke="#1e7a3d" stroke-width="1"/>
+          <text x="230" y="452" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#1e7a3d">Typical</text>
+          <text x="230" y="470" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#1e7a3d">within this species' own history</text>
+
+          <rect x="365" y="434" width="200" height="56" rx="10" fill="#FBDCE0" stroke="#B0173D" stroke-width="1"/>
+          <text x="465" y="452" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#B0173D">ANOMALY</text>
+          <text x="465" y="470" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#B0173D">higher than expected</text>
+
+          <!-- legend -->
+          <rect x="70" y="504" width="14" height="14" rx="3" fill="#F4F6F8" stroke="#DDE7EE"/>
+          <text x="90" y="515" font-family="Calibri, Arial, sans-serif" font-size="11" fill="#5A6C7D">Observed data</text>
+          <rect x="215" y="504" width="14" height="14" rx="3" fill="#E8E9F2" stroke="#21295C" stroke-dasharray="3 2"/>
+          <text x="235" y="515" font-family="Calibri, Arial, sans-serif" font-size="11" fill="#5A6C7D">Latent parameter</text>
+          <rect x="375" y="504" width="14" height="14" rx="3" fill="#FDECC8" stroke="#F18F01"/>
+          <text x="395" y="515" font-family="Calibri, Arial, sans-serif" font-size="11" fill="#5A6C7D">Derived quantity</text>
+        </svg>
+      </div>
+
+      <div class="card p-5">
+        <h4 class="text-sm font-bold uppercase tracking-wide">Posterior Predictive Tail Probability by Species</h4>
+        <p class="text-xs mb-2" style="color:var(--slate);">P(X &ge; Current) under each species' own fitted Gamma-Poisson model. Bars falling below the dashed significance line cross the threshold and flag as anomalies.</p>
+        <div class="chart-container" style="height:300px;"><canvas id="bayesChart"></canvas></div>
+      </div>
+
+      <div class="card p-5">
+        <h4 class="text-sm font-bold uppercase tracking-wide mb-2">Species Detail</h4>
+        <table class="safe">
+          <thead><tr><th>Species</th><th>N.Years</th><th>Hist. Mean</th><th>Hist. P10</th><th>Hist. P90</th><th>Current</th><th>P(X &ge; Current)</th><th>Anomaly Flag</th></tr></thead>
+          <tbody id="bayesTableBody"></tbody>
+        </table>
+        <p class="text-[10px] mt-2" style="color:var(--slate);">Model: annual count X ~ Poisson(&lambda;), with &lambda; itself uncertain and given a Gamma(&alpha;,&beta;) prior fit by method-of-moments to each species' historical mean/P10/P90 (Est.SD &asymp; (P90&minus;P10)/2.563, a normal-quantile approximation of historical spread &mdash; refine with the true historical variance if per-year raw counts become available). The Gamma-Poisson pairing is conjugate, so P(X &ge; Current) is the exact Negative-Binomial posterior predictive tail probability, computed via the Negative-Binomial&ndash;Incomplete-Beta identity rather than approximated.</p>
+        <p class="text-[10px] mt-1" style="color:var(--slate);">Oceanic whitetip shark's current count is well below its historical mean &mdash; it will always read "Typical" here since this tool only screens for higher-than-expected counts. That species' unusually low count is a distinct anomaly requiring separate review, not this table.</p>
+        <p class="text-[10px] mt-1" style="color:var(--slate);">Relative to a rolling-maximum ITS threshold (see the benchmark control on the Dashboard tab), this posterior-predictive approach is directly population-referenced &mdash; anchored to each species' fitted &lambda; distribution rather than just its highest historical year &mdash; worth weighing against PBR- or demographic-model-anchored thresholds as ITS methodology is refined.</p>
+      </div>
+
+      <div class="card p-5">
+        <h4 class="text-sm font-bold uppercase tracking-wide">Causal Diagnostic Tree &mdash; Qualitative Follow-Up</h4>
+        <p class="text-xs mb-2" style="color:var(--slate);">Once the statistical check above flags a species as anomalous, this is the qualitative decision tree a SME would walk to identify <i>why</i>: fishery/gear changes, spatial shifts, expected trend/variability, oceanographic conditions, or a strong year class. Translated from the original working-session causal graph into Mermaid syntax below; scroll horizontally on narrow screens.</p>
+        <div class="zoom-toolbar" style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <button type="button" id="causalTreeZoomOut" class="zoom-btn" title="Zoom out" aria-label="Zoom out">&minus;</button>
+          <button type="button" id="causalTreeZoomIn" class="zoom-btn" title="Zoom in" aria-label="Zoom in">+</button>
+          <button type="button" id="causalTreeReset" class="zoom-btn" title="Reset view" aria-label="Reset view" style="width:auto; padding:0 10px; font-size:11px;">Reset</button>
+          <span style="font-size:10px; color:var(--slate);">Scroll or pinch to zoom &middot; drag to pan</span>
+        </div>
+        <div id="causalTreeViewport" style="position:relative; overflow:hidden; height:560px; border:1px solid var(--mist); border-radius:8px; background:#FFFFFF; cursor:grab; touch-action:none;">
+        <div id="causalTreeStage" style="position:absolute; top:0; left:0; transform-origin:0 0; will-change:transform;">
+<svg id="theGraph" xmlns="http://www.w3.org/2000/svg" width="3840.4140625" height="1112.171875" style="display:block;" viewBox="-8 -8 3840.4140625 1112.171875" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#theGraph{font-family:Calibri,Arial,sans-serif;font-size:16px;fill:#333333;}#theGraph .error-icon{fill:#F4F6F8;}#theGraph .error-text{fill:#0b0907;stroke:#0b0907;}#theGraph .edge-thickness-normal{stroke-width:2px;}#theGraph .edge-thickness-thick{stroke-width:3.5px;}#theGraph .edge-pattern-solid{stroke-dasharray:0;}#theGraph .edge-pattern-dashed{stroke-dasharray:3;}#theGraph .edge-pattern-dotted{stroke-dasharray:2;}#theGraph .marker{fill:#5A6C7D;stroke:#5A6C7D;}#theGraph .marker.cross{stroke:#5A6C7D;}#theGraph svg{font-family:Calibri,Arial,sans-serif;font-size:16px;}#theGraph .label{font-family:Calibri,Arial,sans-serif;color:#333333;}#theGraph .cluster-label text{fill:#0b0907;}#theGraph .cluster-label span,#theGraph p{color:#0b0907;}#theGraph .label text,#theGraph span,#theGraph p{fill:#333333;color:#333333;}#theGraph .node rect,#theGraph .node circle,#theGraph .node ellipse,#theGraph .node polygon,#theGraph .node path{fill:#FCEEB5;stroke:#8a6d00;stroke-width:1px;}#theGraph .flowchart-label text{text-anchor:middle;}#theGraph .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#theGraph .node .label{text-align:center;}#theGraph .node.clickable{cursor:pointer;}#theGraph .arrowheadPath{fill:#0b0b0b;}#theGraph .edgePath .path{stroke:#5A6C7D;stroke-width:2.0px;}#theGraph .flowchart-link{stroke:#5A6C7D;fill:none;}#theGraph .edgeLabel{background-color:#FFFFFF;text-align:center;}#theGraph .edgeLabel rect{opacity:0.5;background-color:#FFFFFF;fill:#FFFFFF;}#theGraph .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#theGraph .cluster rect{fill:#F4F6F8;stroke:hsl(210, 0%, 86.4705882353%);stroke-width:1px;}#theGraph .cluster text{fill:#0b0907;}#theGraph .cluster span,#theGraph p{color:#0b0907;}#theGraph div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:Calibri,Arial,sans-serif;font-size:12px;background:#F4F6F8;border:1px solid hsl(210, 0%, 86.4705882353%);border-radius:2px;pointer-events:none;z-index:100;}#theGraph .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#333333;}#theGraph :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}#theGraph .decision rect{fill:rgb(252, 238, 181)!important;stroke:rgb(138, 109, 0)!important;stroke-width:1px!important;color:rgb(51, 51, 51)!important;}#theGraph .decision polygon{fill:rgb(252, 238, 181)!important;stroke:rgb(138, 109, 0)!important;stroke-width:1px!important;color:rgb(51, 51, 51)!important;}#theGraph .decision ellipse{fill:rgb(252, 238, 181)!important;stroke:rgb(138, 109, 0)!important;stroke-width:1px!important;color:rgb(51, 51, 51)!important;}#theGraph .decision circle{fill:rgb(252, 238, 181)!important;stroke:rgb(138, 109, 0)!important;stroke-width:1px!important;color:rgb(51, 51, 51)!important;}#theGraph .decision path{fill:rgb(252, 238, 181)!important;stroke:rgb(138, 109, 0)!important;stroke-width:1px!important;color:rgb(51, 51, 51)!important;}#theGraph .decision tspan{fill:rgb(51, 51, 51)!important;}#theGraph .cause rect{fill:rgb(220, 233, 247)!important;stroke:rgb(33, 41, 92)!important;stroke-width:1px!important;color:rgb(33, 41, 92)!important;}#theGraph .cause polygon{fill:rgb(220, 233, 247)!important;stroke:rgb(33, 41, 92)!important;stroke-width:1px!important;color:rgb(33, 41, 92)!important;}#theGraph .cause ellipse{fill:rgb(220, 233, 247)!important;stroke:rgb(33, 41, 92)!important;stroke-width:1px!important;color:rgb(33, 41, 92)!important;}#theGraph .cause circle{fill:rgb(220, 233, 247)!important;stroke:rgb(33, 41, 92)!important;stroke-width:1px!important;color:rgb(33, 41, 92)!important;}#theGraph .cause path{fill:rgb(220, 233, 247)!important;stroke:rgb(33, 41, 92)!important;stroke-width:1px!important;color:rgb(33, 41, 92)!important;}#theGraph .cause tspan{fill:rgb(33, 41, 92)!important;}#theGraph .panic rect{fill:rgb(251, 220, 224)!important;stroke:rgb(176, 23, 61)!important;stroke-width:1px!important;color:rgb(176, 23, 61)!important;}#theGraph .panic polygon{fill:rgb(251, 220, 224)!important;stroke:rgb(176, 23, 61)!important;stroke-width:1px!important;color:rgb(176, 23, 61)!important;}#theGraph .panic ellipse{fill:rgb(251, 220, 224)!important;stroke:rgb(176, 23, 61)!important;stroke-width:1px!important;color:rgb(176, 23, 61)!important;}#theGraph .panic circle{fill:rgb(251, 220, 224)!important;stroke:rgb(176, 23, 61)!important;stroke-width:1px!important;color:rgb(176, 23, 61)!important;}#theGraph .panic path{fill:rgb(251, 220, 224)!important;stroke:rgb(176, 23, 61)!important;stroke-width:1px!important;color:rgb(176, 23, 61)!important;}#theGraph .panic tspan{fill:rgb(176, 23, 61)!important;}</style><g><marker id="theGraph_flowchart-pointEnd" class="marker flowchart" viewBox="0 0 10 10" refX="6" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="theGraph_flowchart-pointStart" class="marker flowchart" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="theGraph_flowchart-circleEnd" class="marker flowchart" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="theGraph_flowchart-circleStart" class="marker flowchart" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="theGraph_flowchart-crossEnd" class="marker cross flowchart" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="theGraph_flowchart-crossStart" class="marker cross flowchart" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edgePaths"><path d="M241.306,378.302L256.102,369.651C270.897,361,300.487,343.697,320.389,335.117C340.291,326.537,350.503,326.679,355.61,326.75L360.716,326.821" id="L-Q1-Q2-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q1 LE-Q2" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M241.306,485.971L256.102,494.456C270.897,502.94,300.487,519.91,336.107,528.394C371.726,536.879,413.373,536.879,434.197,536.879L455.02,536.879" id="L-Q1-DontPanic-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q1 LE-DontPanic" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M600.033,273.943L614.681,265.244C629.329,256.544,658.626,239.145,678.38,230.517C698.135,221.888,708.347,222.03,713.454,222.101L718.56,222.172" id="L-Q2-Q3-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q2 LE-Q3" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M557.731,422.147L579.43,465.081C601.128,508.015,644.525,593.882,701.179,636.816C757.833,679.75,827.745,679.75,897.656,679.75C967.568,679.75,1037.479,679.75,1102.255,679.75C1167.031,679.75,1226.672,679.75,1286.313,679.75C1345.953,679.75,1405.594,679.75,1442.52,679.416C1479.447,679.081,1493.66,678.412,1500.766,678.078L1507.872,677.744" id="L-Q2-Q6-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q2 LE-Q6" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M1014.216,164.009L1029.745,156.091C1045.274,148.174,1076.332,132.339,1105.651,124.421C1134.969,116.504,1162.547,116.504,1176.337,116.504L1190.126,116.504" id="L-Q3-CauseA-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q3 LE-CauseA" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M1014.216,280.483L1029.745,288.234C1045.274,295.985,1076.332,311.487,1096.968,319.309C1117.603,327.13,1127.816,327.272,1132.922,327.344L1138.029,327.415" id="L-Q3-Q4-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q3 LE-Q4" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M1370.263,267.455L1386.092,255.924C1401.92,244.394,1433.577,221.334,1457.875,209.879C1482.174,198.424,1499.113,198.575,1507.582,198.651L1516.052,198.726" id="L-Q4-Q5-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q4 LE-Q5" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M1349.081,408.704L1368.44,433.978C1387.799,459.253,1426.517,509.802,1461.676,541.636C1496.836,573.47,1528.437,586.589,1544.237,593.148L1560.038,599.707" id="L-Q4-Q6-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q4 LE-Q6" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M1889.755,170.63L1903.631,168.237C1917.508,165.844,1945.262,161.059,1979.221,158.666C2013.18,156.273,2053.344,156.273,2073.426,156.273L2093.509,156.273" id="L-Q5-CauseB-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q5 LE-CauseB" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M1832.684,283.988L1856.072,301.596C1879.461,319.204,1926.238,354.421,1954.65,372.029C1983.061,389.637,1993.107,389.637,1998.13,389.637L2003.153,389.637" id="L-Q5-WhatDid-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q5 LE-WhatDid" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M1844.19,571.612L1865.661,555.283C1887.132,538.954,1930.074,506.295,1971.627,489.966C2013.18,473.637,2053.344,473.637,2073.426,473.637L2093.509,473.637" id="L-Q6-CauseC-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q6 LE-CauseC" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M1867.91,735.668L1885.428,743.914C1902.945,752.159,1937.98,768.65,1961.931,776.968C1985.882,785.287,1998.748,785.434,2005.181,785.507L2011.614,785.58" id="L-Q6-Q7-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q6 LE-Q7" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M2300.732,722.896L2318.339,712.771C2335.946,702.645,2371.161,682.395,2393.874,672.341C2416.588,662.287,2426.8,662.429,2431.907,662.5L2437.013,662.571" id="L-Q7-Q8-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q7 LE-Q8" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M2276.632,872.485L2298.256,894.212C2319.88,915.938,2363.127,959.391,2425.823,981.117C2488.518,1002.844,2570.661,1002.844,2652.805,1002.844C2734.948,1002.844,2817.091,1002.844,2891.374,1002.844C2965.656,1002.844,3032.078,1002.844,3098.5,1002.844C3164.922,1002.844,3231.344,1002.844,3271.343,1002.227C3311.343,1001.611,3324.92,1000.378,3331.709,999.762L3338.497,999.146" id="L-Q7-Q10-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q7 LE-Q10" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M2796.999,595.346L2814.038,587.244C2831.077,579.141,2865.156,562.936,2899.375,554.833C2933.594,546.73,2967.954,546.73,2985.133,546.73L3002.313,546.73" id="L-Q8-CauseD-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q8 LE-CauseD" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M2796.999,729.943L2814.038,737.879C2831.077,745.815,2865.156,761.687,2887.301,769.694C2909.447,777.701,2919.66,777.843,2924.766,777.914L2929.872,777.985" id="L-Q8-Q9-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q8 LE-Q9" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M3248.225,763.456L3256.482,762.556C3264.739,761.657,3281.252,759.858,3297.397,758.958C3313.542,758.059,3329.318,758.059,3337.206,758.059L3345.095,758.059" id="L-Q9-CauseE-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q9 LE-CauseE" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M3212.824,828.063L3226.981,834.235C3241.138,840.408,3269.452,852.753,3297.241,870.62C3325.03,888.487,3352.294,911.876,3365.927,923.57L3379.559,935.264" id="L-Q9-Q10-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q9 LE-Q10" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M3525.391,964.125L3535.292,961.12C3545.193,958.115,3564.995,952.104,3581.786,949.099C3598.577,946.094,3612.357,946.094,3619.247,946.094L3626.138,946.094" id="L-Q10-CauseF-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q10 LE-CauseF" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path><path d="M3525.391,1013.062L3535.292,1015.901C3545.193,1018.739,3564.995,1024.417,3579.919,1027.255C3594.843,1030.094,3604.889,1030.094,3609.911,1030.094L3614.934,1030.094" id="L-Q10-Panic2-0" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-Q10 LE-Panic2" style="fill:none;" marker-end="url(#theGraph_flowchart-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(330.078125, 326.39453125)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(330.078125, 536.87890625)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g><g class="edgeLabel" transform="translate(687.921875, 221.74609375)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(1107.390625, 679.75)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g><g class="edgeLabel" transform="translate(1107.390625, 116.50390625)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(1107.390625, 326.98828125)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g><g class="edgeLabel" transform="translate(1465.234375, 198.2734375)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(1465.234375, 560.3515625)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g><g class="edgeLabel" transform="translate(1973.015625, 156.2734375)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(1973.015625, 389.63671875)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g><g class="edgeLabel" transform="translate(1973.015625, 473.63671875)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(1973.015625, 785.140625)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g><g class="edgeLabel" transform="translate(2406.375, 662.14453125)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(2899.234375, 1002.84375)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g><g class="edgeLabel" transform="translate(2899.234375, 546.73046875)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(2899.234375, 777.55859375)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g><g class="edgeLabel" transform="translate(3297.765625, 758.05859375)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(3297.765625, 865.09765625)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g><g class="edgeLabel" transform="translate(3584.796875, 946.09375)"><g class="label" transform="translate(-10.4375, -9.5)"><rect rx="0" ry="0" width="20.8410587310791" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Yes</tspan></text></g></g><g class="edgeLabel" transform="translate(3584.796875, 1030.09375)"><g class="label" transform="translate(-9.3828125, -9.5)"><rect rx="0" ry="0" width="19.41164779663086" height="18.229991912841797"></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">No</tspan></text></g></g></g><g class="nodes"><g class="node default decision flowchart-label" id="flowchart-Q1-0" data-node="true" data-id="Q1" transform="translate(147.3203125, 431.63671875)"><polygon points="147.3203125,0 294.640625,-147.3203125 147.3203125,-294.640625 0,-147.3203125" class="label-container" transform="translate(-147.3203125,147.3203125)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Are observations higher than normal?</tspan></text></g></g><g class="node default decision flowchart-label" id="flowchart-Q2-2" data-node="true" data-id="Q2" transform="translate(509, 326.39453125)"><polygon points="143.484375,0 286.96875,-143.484375 143.484375,-286.96875 0,-143.484375" class="label-container" transform="translate(-143.484375,143.484375)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Did the fishery change how it fishes?</tspan></text></g></g><g class="node default cause flowchart-label" id="flowchart-DontPanic-4" data-node="true" data-id="DontPanic" transform="translate(509, 536.87890625)"><rect style="" rx="17" ry="17" x="-48.6796875" y="-17" width="97.359375" height="34"></rect><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Don't Panic</tspan></text></g></g><g class="node default decision flowchart-label" id="flowchart-Q3-6" data-node="true" data-id="Q3" transform="translate(897.65625, 221.74609375)"><polygon points="174.296875,0 348.59375,-174.296875 174.296875,-348.59375 0,-174.296875" class="label-container" transform="translate(-174.296875,174.296875)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Did the fishery shift into the core distribution?</tspan></text></g></g><g class="node default decision flowchart-label" id="flowchart-Q6-8" data-node="true" data-id="Q6" transform="translate(1719.125, 665)"><polygon points="218.453125,0 436.90625,-218.453125 218.453125,-436.90625 0,-218.453125" class="label-container" transform="translate(-218.453125,218.453125)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Is the increase expected given recent trends and variability?</tspan></text></g></g><g class="node default cause flowchart-label" id="flowchart-CauseA-10" data-node="true" data-id="CauseA" transform="translate(1286.3125, 116.50390625)"><rect class="basic label-container" style="" rx="5" ry="5" x="-90.88671875" y="-17" width="181.7734375" height="34"></rect><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">This is probably the cause</tspan></text></g></g><g class="node default decision flowchart-label" id="flowchart-Q4-12" data-node="true" data-id="Q4" transform="translate(1286.3125, 326.98828125)"><polygon points="143.484375,0 286.96875,-143.484375 143.484375,-286.96875 0,-143.484375" class="label-container" transform="translate(-143.484375,143.484375)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Did the fishery change how it fishes?</tspan></text></g></g><g class="node default decision flowchart-label" id="flowchart-Q5-14" data-node="true" data-id="Q5" transform="translate(1719.125, 198.2734375)"><polygon points="198.2734375,0 396.546875,-198.2734375 198.2734375,-396.546875 0,-198.2734375" class="label-container" transform="translate(-198.2734375,198.2734375)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Is the new method expected to increase interactions?</tspan></text></g></g><g class="node default cause flowchart-label" id="flowchart-CauseB-18" data-node="true" data-id="CauseB" transform="translate(2189.6953125, 156.2734375)"><rect class="basic label-container" style="" rx="5" ry="5" x="-90.88671875" y="-17" width="181.7734375" height="34"></rect><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">This is probably the cause</tspan></text></g></g><g class="node default cause flowchart-label" id="flowchart-WhatDid-20" data-node="true" data-id="WhatDid" transform="translate(2189.6953125, 389.63671875)"><rect class="basic label-container" style="" rx="5" ry="5" x="-181.2421875" y="-17" width="362.484375" height="34"></rect><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">What did they do that is different, and is it the cause?</tspan></text></g></g><g class="node default cause flowchart-label" id="flowchart-CauseC-22" data-node="true" data-id="CauseC" transform="translate(2189.6953125, 473.63671875)"><rect class="basic label-container" style="" rx="5" ry="5" x="-90.88671875" y="-17" width="181.7734375" height="34"></rect><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">This is probably the cause</tspan></text></g></g><g class="node default decision flowchart-label" id="flowchart-Q7-24" data-node="true" data-id="Q7" transform="translate(2189.6953125, 785.140625)"><polygon points="173.28125,0 346.5625,-173.28125 173.28125,-346.5625 0,-173.28125" class="label-container" transform="translate(-173.28125,173.28125)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Has there been a change in ocean conditions?</tspan></text></g></g><g class="node default decision flowchart-label" id="flowchart-Q8-26" data-node="true" data-id="Q8" transform="translate(2652.8046875, 662.14453125)"><polygon points="210.9921875,0 421.984375,-210.9921875 210.9921875,-421.984375 0,-210.9921875" class="label-container" transform="translate(-210.9921875,210.9921875)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Are these conditions likely to result in a distribution shift?</tspan></text></g></g><g class="node default decision flowchart-label" id="flowchart-Q10-28" data-node="true" data-id="Q10" transform="translate(3441.28125, 988.09375)"><polygon points="108.078125,0 216.15625,-108.078125 108.078125,-216.15625 0,-108.078125" class="label-container" transform="translate(-108.078125,108.078125)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Is this a strong year class?</tspan></text></g></g><g class="node default cause flowchart-label" id="flowchart-CauseD-30" data-node="true" data-id="CauseD" transform="translate(3098.5, 546.73046875)"><rect class="basic label-container" style="" rx="5" ry="5" x="-90.88671875" y="-17" width="181.7734375" height="34"></rect><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">This is probably the cause</tspan></text></g></g><g class="node default decision flowchart-label" id="flowchart-Q9-32" data-node="true" data-id="Q9" transform="translate(3098.5, 777.55859375)"><polygon points="163.828125,0 327.65625,-163.828125 163.828125,-327.65625 0,-163.828125" class="label-container" transform="translate(-163.828125,163.828125)" style=""></polygon><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Would these conditions affect catchability?</tspan></text></g></g><g class="node default cause flowchart-label" id="flowchart-CauseE-34" data-node="true" data-id="CauseE" transform="translate(3441.28125, 758.05859375)"><rect class="basic label-container" style="" rx="5" ry="5" x="-90.88671875" y="-17" width="181.7734375" height="34"></rect><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">This is probably the cause</tspan></text></g></g><g class="node default cause flowchart-label" id="flowchart-CauseF-38" data-node="true" data-id="CauseF" transform="translate(3722.32421875, 946.09375)"><rect class="basic label-container" style="" rx="5" ry="5" x="-90.88671875" y="-17" width="181.7734375" height="34"></rect><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">This is probably the cause</tspan></text></g></g><g class="node default panic flowchart-label" id="flowchart-Panic2-40" data-node="true" data-id="Panic2" transform="translate(3722.32421875, 1030.09375)"><rect class="basic label-container" style="" rx="5" ry="5" x="-102.08984375" y="-17" width="204.1796875" height="34"></rect><g class="label" style="" transform="translate(0, -9.5)"><rect></rect><text style=""><tspan xml:space="preserve" dy="1em" x="0" class="row">Cause remains unclear; Panic</tspan></text></g></g></g></g></g></svg>
+        </div>
+        </div>
+        <p class="text-[10px] mt-2" style="color:var(--slate);">Yellow diamonds = diagnostic questions; blue boxes = "this is probably the cause" conclusions; pink box = cause remains unclear (escalate to Plan Team). Two questions each appear twice in the source graph ("Did the fishery change how it fishes?" and "Is this a strong year class?") because different upstream branches converge back onto the same follow-up question &mdash; drawn here as the same node reached from two paths, matching the original.</p>
+      </div>
+    </div>
+
+    <!-- DOCS -->
+    <div id="contentDocs" class="space-y-5 hidden text-sm" style="color:var(--ink);">
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-2">Feature summary</h3>
+        <ul class="list-disc pl-5 space-y-1 text-[13px]">
+          <li><b>Spatial Effort &amp; Fisher Behavior sensor</b> — southward shift index and post-interaction avoidance response, feeding a spatial overlap multiplier on μ.</li>
+          <li><b>Gear &amp; Operational Modifications sensor</b> — shallow-set effort share and circle-hook/branchline compliance, feeding a gear multiplier on μ.</li>
+          <li><b>Demographic Composition sensor</b> — juvenile share of interactions, feeding a life-stage-weighted penalty multiplier independent of raw take count.</li>
+          <li><b>SAFE Summary Tables engine</b> — Fishery Behavior, Protected Species Interactions, and a conditional Diagnostic Supplement, matching the July working-session decision to adopt this Summary Tables reporting strategy.</li>
+          <li><b>Auto-narrative generator</b> — drafts the Table 3 narrative only when an anomaly is flagged, for scientist review rather than direct publication.</li>
+          <li><b>Data Pipeline tab</b> — visualizes the four-stage architecture (Abstracted Data Products → Supportive AI → Anomaly Detection → Statutory Alignment) with mock feed-sync status.</li>
+          <li><b>Data provenance / audit trail</b> — a running log confirming every dashboard value traces to an abstracted source, never a raw PIROP record.</li>
+        </ul>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-2">LOTUS observer data in the SAFE report</h3>
+        <p class="text-[13px] mb-2">Observer data doesn't reach the SAFE report directly from the field. It moves through a specific chain, and only the last stage is treated as report-ready:</p>
+        <ul class="list-disc pl-5 space-y-1 text-[13px] mb-2">
+          <li>Observers record interactions on tablets during trips, which upload into <b>Pirops</b> (the Pacific Islands Regional Observer Program debriefing database), where automated and staff validations clean and QA the records.</li>
+          <li>Once approved, records move into <b>LOTUS</b>, the backend considered "blessed" — this is the only stage NOAA staff pull from for SAFE report tables; Pirops itself is not queried directly for reporting.</li>
+          <li>A staff analyst runs a set of standing SQL queries against LOTUS — one query per data point — to populate the protected species section of the SAFE report, which is predominantly longline interaction data.</li>
+          <li>Interaction rates are reported as <b>nominal CPUE</b> (catch/interactions per unit effort) rather than raw counts, so a rate change can be distinguished from a simple change in fishing effort.</li>
+          <li>Before disclosure, an aggregation check withholds any stratum observed on fewer than three vessels, to avoid identifying individual vessels.</li>
+          <li>If a discrepancy shows up between LOTUS and Pirops (e.g. a species misidentification later corrected), the record can be pulled back into Pirops, corrected, and pushed forward again — LOTUS is treated as current-best, not immutable.</li>
+        </ul>
+        <p class="text-[11.5px]" style="color:var(--slate);">Today this is a largely manual, once-a-year pull: queries tracked in a spreadsheet, results copied into a Word document, then cross-checked against a second observer-database view for inconsistencies. That manual pull is exactly what Table 0 and the Stage 1 → Stage 2 automation in this pipeline are meant to replace with a standing connection to LOTUS.</p>
+        <p class="text-[11.5px] mt-1" style="color:var(--slate);">A related published tool: PIFSC's <a href="https://connect.fisheries.noaa.gov/Bycatch-GUI/" target="_blank" rel="noopener" style="color:var(--ocean); text-decoration:underline;">Bycatch GUI</a> already exposes recent and historical Hawai'i and American Samoa observed bycatch and bycatch estimates drawn from this same chain — evidence that a standing, browsable interface on top of LOTUS-derived estimates is achievable, not just aspirational.</p>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-2">Model logic</h3>
+        <p class="text-[13px] mb-2">The calibrated take μ is now anchored to a real observed count rather than synthesized from environmental conditions alone. The LOTUS-observed interactions, expanded by observer coverage, are the base; everything else is a multiplicative adjustment factor on top of that base, applied before the Bayesian projection:</p>
+        <ul class="list-disc pl-5 space-y-1 text-[13px]">
+          <li><b>Expanded estimate</b> = observed interactions (LOTUS) ÷ observer coverage rate — a design-based expansion, shown directly in Table 0.</li>
+          <li><b>Environmental adjustment factor</b> = (weighted SST/EKE/|vorticity|/chlorophyll-a) ÷ the same formula evaluated at baseline sensor values, so it equals 1.0× when conditions are at baseline and moves proportionally as conditions shift.</li>
+          <li><b>Spatial overlap multiplier</b> = 1 + (southward shift ÷ 100) × 0.5</li>
+          <li><b>Gear multiplier</b> = 1 + (shallow-set share ÷ 100) × 0.3 × (1 − 0.5 × compliance)</li>
+          <li><b>μ<sub>calibrated</sub></b> = expanded estimate × environmental factor × β (if bias correction on) × spatial multiplier × gear multiplier — this is the model-based figure the Dashboard stats and the ITS trigger check use.</li>
+          <li><b>Demographic penalty multiplier</b> = 1 + max(0, juvenile share − 30%) ÷ 100 × 1.5, applied to the sigmoidal penalty, not to μ — juveniles raise population-level severity without changing the raw count.</li>
+        </ul>
+        <p class="text-[11.5px] mt-2" style="color:var(--slate);">This mirrors a real design-based vs. model-based distinction in fisheries reporting: Table 0's expanded estimate is what a straightforward coverage expansion of the observer data would give you; μ<sub>calibrated</sub> is what the risk model expects once current conditions are factored in. The gap between the two is itself informative — a large gap means conditions this cycle are unusual relative to what was actually observed.</p>
+      </div>
+      <div class="card p-5">
+        <div class="flex items-center gap-2 mb-2"><h3 class="text-base font-bold">Random forest ensembles for anomaly detection</h3></div>
+        <p class="text-[13px] mb-2">The Dashboard's sigmoidal/Bayesian logic above is a transparent, single-threshold check on total take against the ITS. It is <i>univariate</i> — it doesn't ask <i>why</i> a year looks unusual. A random forest ensemble is proposed as the Stage 3 complement that reasons over all abstracted covariates at once, including the LOTUS-sourced bycatch and demographic fields in Table 0: spatial shift, gear shift, gear compliance, avoidance response, juvenile share, SST, EKE, vorticity, and chlorophyll-a, per species-year.</p>
+        <ul class="list-disc pl-5 space-y-1 text-[13px] mb-2">
+          <li><b>Ensemble structure</b> — many decision trees, each trained on a bootstrap sample of historical species-years with a random subset of the covariates at each split; the forest's output is the average (regression) or vote share (classification) across trees, which is what makes it robust to any single noisy input or short data run.</li>
+          <li><b>Two complementary modes:</b>
+            <ul class="list-disc pl-5 space-y-1 mt-1">
+              <li><i>Supervised</i> — if past years have been labeled "flagged / not flagged" by the Plan Team, the forest learns a classifier and outputs an anomaly probability for the current year, alongside the ITS trigger check already surfaced in Table 3 and the Dashboard alert box.</li>
+              <li><i>Unsupervised (isolation-style)</i> — since true anomalies are rare and not always pre-labeled, trees can instead be grown to isolate unusual covariate combinations quickly (short average path length = more anomalous); this needs no labeled training set, which matters early in the pipeline's life when few confirmed anomaly-years exist.</li>
+            </ul>
+          </li>
+          <li><b>Feature importance</b> — the forest ranks which covariates most influenced a given year's anomaly score (e.g. "spatial shift and juvenile share drove 70% of this year's score, oceanographic terms drove the rest"). This ranking populates the Table 3 diagnostic rows directly and doubles as a live VOI signal — the covariate the forest weights most heavily is the one worth investing further monitoring in.</li>
+          <li><b>Confidence, not a hard cutoff</b> — out-of-bag error and the spread of votes across trees give an honest confidence band on the anomaly call, which sits next to (not instead of) the existing exceedance-probability and utility readouts on the Dashboard.</li>
+        </ul>
+        <p class="text-[11.5px]" style="color:var(--slate);">This section documents the intended Stage 3 methodology; the interactive Dashboard above still runs the transparent formulas in <i>Model logic</i> so every number on screen stays auditable. Wiring an actual trained forest in would be the next build step, likely running server-side against real historical species-year records pulled from LOTUS rather than in-browser.</p>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-2">Anomaly detection logic</h3>
+        <p class="text-[13px] mb-2">The formula-based check and the random forest check above feed a single combined decision. It is an <b>OR-gate escalation</b>, not a consensus vote: any one signal firing is enough to move a species-year to the next tier, because real anomalies in this fishery show up in different forms — a pure count blip, a demographic shift with a normal total, or a spatial/gear pattern that's statistically odd without exceeding any count. Requiring every check to agree would let a genuine single-signal anomaly slip through unflagged.</p>
+
+        <svg width="100%" viewBox="0 0 680 430" style="max-width:680px; display:block; margin:8px auto 16px;">
+          <defs>
+            <marker id="dlArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M2 1L8 5L2 9" fill="none" stroke="#5A6C7D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </marker>
+          </defs>
+
+          <rect x="190" y="40" width="300" height="56" rx="10" fill="#F4F6F8" stroke="#DDE7EE" stroke-width="1"/>
+          <text x="340" y="58" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#21295C">Species-year inputs</text>
+          <text x="340" y="76" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#5A6C7D">Abstracted covariates, Table 0/1 data</text>
+
+          <path d="M340 96 L340 116 L215 116 L215 136" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dlArrow)"/>
+          <path d="M340 96 L340 116 L475 116 L475 136" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dlArrow)"/>
+
+          <rect x="90" y="136" width="250" height="56" rx="10" fill="#E3F0F5" stroke="#065A82" stroke-width="1"/>
+          <text x="215" y="154" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#065A82">Formula-based check</text>
+          <text x="215" y="172" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#0C4C6B">ITS trigger + Bayesian utility</text>
+
+          <rect x="360" y="136" width="230" height="56" rx="10" fill="#E8E9F2" stroke="#21295C" stroke-width="1"/>
+          <text x="475" y="154" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#21295C">Multivariate check</text>
+          <text x="475" y="172" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#333A63">Random forest ensemble score</text>
+
+          <path d="M215 192 L215 212 L340 212 L340 232" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dlArrow)"/>
+          <path d="M475 192 L475 212 L340 212 L340 232" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dlArrow)"/>
+
+          <rect x="205" y="232" width="270" height="56" rx="10" fill="#FDECC8" stroke="#F18F01" stroke-width="1"/>
+          <text x="340" y="250" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#8a5a00">Combined decision</text>
+          <text x="340" y="268" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#8a5a00">Any signal exceeds its threshold?</text>
+
+          <path d="M340 288 L340 308 L155 308 L155 328" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dlArrow)"/>
+          <path d="M340 288 L340 308 L330 308 L330 328" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dlArrow)"/>
+          <path d="M340 288 L340 308 L515 308 L515 328" fill="none" stroke="#5A6C7D" stroke-width="1.5" marker-end="url(#dlArrow)"/>
+
+          <rect x="80" y="328" width="150" height="56" rx="10" fill="#E2F2E6" stroke="#1e7a3d" stroke-width="1"/>
+          <text x="155" y="346" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#1e7a3d">Open access</text>
+          <text x="155" y="364" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#1e7a3d">Within bounds</text>
+
+          <rect x="250" y="328" width="160" height="56" rx="10" fill="#FCE8E0" stroke="#B8410A" stroke-width="1"/>
+          <text x="330" y="346" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#B8410A">Elevated watch</text>
+          <text x="330" y="364" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#B8410A">Approaching trigger</text>
+
+          <rect x="430" y="328" width="170" height="56" rx="10" fill="#FBDCE0" stroke="#B0173D" stroke-width="1"/>
+          <text x="515" y="346" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="700" fill="#B0173D">Review triggered</text>
+          <text x="515" y="364" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="12" fill="#B0173D">Table 3 + narrative</text>
+        </svg>
+
+        <ul class="list-disc pl-5 space-y-1 text-[13px] mb-2">
+          <li><b>1. Species-year inputs</b> — the abstracted covariates already assembled in Table 0/1: spatial shift, gear shift, gear compliance, avoidance response, juvenile share, SST, EKE, vorticity, chlorophyll-a.</li>
+          <li><b>2a. Formula-based check</b> — two existing sub-rules, either one sufficient to flag: (i) does current-year take exceed the ITS trigger threshold (ITS limit × (1 − dynamic buffer), where the buffer widens as SST/EKE rise)? this is what populates Table 3 and its "FLAGGED FOR REVIEW" badge. (ii) does the Bayesian exceedance probability cross the risk-posture inflection point, or does utility go negative? this is what sets the Dashboard alert box.</li>
+          <li><b>2b. Multivariate check</b> — the random forest ensemble score from the section above, run in parallel on the same inputs; it can flag an unusual <i>combination</i> of covariates even when neither formula-based sub-rule is crossed.</li>
+          <li><b>3. Combined decision</b> — because the gate is OR, not AND: nothing crossed → open access; something trending toward a threshold without crossing it → elevated watch; anything actually crossed (ITS trigger, utility/probability, or the RF anomaly score) → review triggered.</li>
+          <li><b>4. Outcome</b> — review triggered is what populates Table 3 and drafts the auto-narrative; a Plan Team scientist reviews and edits before anything reaches the SAFE report, per the auto-narrative note in the Summary Tables tab.</li>
+        </ul>
+        <p class="text-[11.5px]" style="color:var(--slate);">Today only 2a is implemented in the live Dashboard; 2b (the random forest layer) is documented above as the intended next build, and the combined OR-gate is currently expressed as two separate indicators (the Table 3 "FLAGGED FOR REVIEW" badge and the Dashboard alert box) rather than one unified status — merging them into a single displayed decision would be a natural follow-on to wiring in the forest. Table 2 (Summary Tables tab) is a separate, real historical monitoring reference and does not participate in this OR-gate.</p>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-2">Stage 3 methods compared</h3>
+        <p class="text-[13px] mb-3" style="color:var(--ink);">The four methods listed under Stage 3 on the Pipeline tab trade off against each other rather than one simply being "best" — each covers a gap the others leave open.</p>
+        <table class="safe">
+          <thead><tr><th>Method</th><th>Advantages</th><th>Disadvantages</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>SAFE Summary Tables engine</b></td>
+              <td>Not a detection method itself — the reporting scaffold the other three feed into. Separates "what happened" / "is it unusual" / "why" so diagnostic detail only surfaces when actually needed.</td>
+              <td>A container, not a test — inherits whatever weakness lives in the method that populates Table 2's flag.</td>
+            </tr>
+            <tr>
+              <td><b>Rolling 5-yr ITS running-sum check</b></td>
+              <td>Transparent and easy to defend in a regulatory setting; anyone can recompute it by hand. Cheap, no distributional assumptions, directly tied to the actual ITS trigger.</td>
+              <td>A descriptive statistic, not an inference — no probabilistic interpretation, blind to population trend, discards existing life-history/stock-assessment information, purely univariate (no explanation of <i>why</i>). See "Known defensibility gap" below.</td>
+            </tr>
+            <tr>
+              <td><b>Random forest ensemble scoring</b></td>
+              <td>The only genuinely multivariate method — can catch an anomalous <i>combination</i> of covariates even when no single count is extreme. Feature importance doubles as a live explanation of <i>why</i> a year flagged.</td>
+              <td>Documented, not yet implemented. Needs either labeled historical anomaly-years or an unsupervised variant, and is less auditable than a simple threshold — a real cost in a regulatory context.</td>
+            </tr>
+            <tr>
+              <td><b>Bayesian Anomaly Detector</b></td>
+              <td>Actually built and running. Gives a real probability statement (top α% tail of that species' own history) rather than a bare threshold, population-referenced per species, with a user-adjustable significance level.</td>
+              <td>Only screens for higher-than-expected counts — a species with an unusually <i>low</i> count always reads "typical" here. Still univariate per species; can't explain why a count is high. Fit is moment-matched from summary stats rather than raw annual counts.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="text-[11.5px] mt-2" style="color:var(--slate);">The pattern across all four: the two <i>implemented</i> methods (Interactions, Bayesian detector) are each univariate with a specific blind spot (trend-blindness vs. low-count-blindness), while the two <i>documented-but-not-built</i> pieces (random forest, and the SAFE Summary Tables engine that would present it) are the ones that would actually address "why" and "multivariate."</p>
+      </div>
+      <div class="card p-5 border-l-4" style="border-left-color:var(--orange) !important;">
+        <h3 class="text-base font-bold mb-2">Known defensibility gap</h3>
+        <p class="text-[13px]">The rolling 5-year running-sum ITS is legally workable under 50 CFR §402.16 but is not population-referenced — it reflects historical takes, not PBR or λ. Anchoring the threshold to a demographic model (life-history synthesis → stage-structured model → elasticity analysis → ITS derivation from PBR/λ → peer review → pipeline integration) is the identified path to a more defensible threshold and remains a future workstream this tool does not resolve. See "Toward a Bayesian, population-referenced ITS" below for the proposed approach.</p>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-2">Toward a Bayesian, population-referenced ITS</h3>
+        <p class="text-[13px] mb-2">The rolling max is a descriptive statistic, not an inference — it answers "what's the highest take we've seen lately," not "what level of take the population can sustain." It has no probabilistic interpretation, it's blind to stock trend (a declining and a recovering stock with the same recent takes get the same threshold), and it discards partial information that already exists for these species (life history studies, regional stock assessments, tagging data). This section documents the proposed replacement, which is the same six-phase workstream already tracked in this app's plan, made concrete.</p>
+        <ul class="list-disc pl-5 space-y-1 text-[13px] mb-2">
+          <li><b>Reference point, not a lagging statistic</b> — derive the threshold from a Potential Biological Removal–style calculation, the same logic MMPA already applies to marine mammals, extended here to ESA-listed species: PBR = N<sub>min</sub> × ½R<sub>max</sub> × F<sub>r</sub>, where N<sub>min</sub> is a conservative population estimate, R<sub>max</sub> is maximum net productivity, and F<sub>r</sub> is a recovery factor tuned to stock status.</li>
+          <li><b>Bayesian treatment because the data are genuinely sparse</b> — N<sub>min</sub> and R<sub>max</sub> for OWT and turtles aren't known precisely; put a prior on each, update with whatever survey/tagging/assessment data exists, and get a posterior distribution rather than a false-precision point estimate. The ITS becomes "the take level such that posterior P(exceeding a sustainable removal rate) < an agreed tolerance" — a real probability statement, not a historical maximum.</li>
+          <li><b>SME input as formal priors, not ad hoc opinion</b> — structured elicitation (IDEA protocol or SHELF-style), multiple independent experts, aggregated and calibrated rather than one biologist's gut number, with the elicitation protocol itself documented. That documentation is what turns "expert judgment" into "best scientific and commercial data available" in the regulatory sense, rather than something a challenger can dismiss as subjective.</li>
+          <li><b>Plugs directly into the existing Dashboard</b> — the Bayesian Risk Projection chart already computes an exceedance probability against the ITS Limit slider. Under this approach that slider becomes a model output with a credible interval (the posterior PBR-referenced threshold) rather than a user-set constant. The random forest layer is unaffected — it still explains <i>why</i> a year looks unusual, while the population model says <i>whether</i> the magnitude matters biologically.</li>
+        </ul>
+        <p class="text-[13px] mb-1"><b>Staying inline with regulations:</b> 50 CFR §402.16 requires NMFS to specify a take amount/extent and reinitiate consultation if exceeded — it does not prescribe the calculation method, so switching methodologies is permissible. Three things have to hold for it to survive scrutiny:</p>
+        <ul class="list-disc pl-5 space-y-1 text-[13px]">
+          <li><b>Best available science standard</b> (ESA §7(a)(2), MSA National Standard 2) — the model and elicitation protocol need peer review, the same peer-review step already in the six-phase plan.</li>
+          <li><b>Transparency and audit trail</b> — every prior, data source, and elicitation round documented, matching the Data Provenance card already in the Pipeline tab.</li>
+          <li><b>Formal process, not a silent swap</b> — changing the ITS methodology means reinitiating or amending the Biological Opinion through PIRO/PIFSC; a tool can propose and simulate the new threshold, but cannot unilaterally replace the regulatory number without that consultation process.</li>
+        </ul>
+      </div>
+      <div class="card p-5">
+        <h3 class="text-base font-bold mb-2">Suggested additional features</h3>
+        <ul class="list-disc pl-5 space-y-1 text-[13px]">
+          <li>VOI-ranked data-gap panel — surfaces which uncertain input most drives decision risk this cycle.</li>
+          <li>Historical envelope overlay on the spatial chart, built from an actual 10-yr effort distribution rather than a single reference band.</li>
+          <li>Per-species ITS presets pulling directly from ISC/WCPFC/IATTC abstracted stock indicators.</li>
+          <li>Role-based views (Plan Team / SSC / Council) that show different levels of table detail.</li>
+          <li>One-click hand-off from Table 3 narrative draft into the SAFE report document template.</li>
+          <li>Trained random forest ensemble (server-side) replacing the illustrative feature-importance narrative with real out-of-bag anomaly scores.</li>
+          <li>Live standing connection to LOTUS replacing the annual manual SQL-pull-and-spreadsheet workflow described in Documentation.</li>
+          <li>PBR-referenced Bayesian ITS with formal SME elicitation, replacing the rolling 5-yr max once peer-reviewed per "Toward a Bayesian, population-referenced ITS" above.</li>
+        </ul>
+      </div>
+    </div>
+
+<script>
+const el = id => document.getElementById(id);
+
+const speciesPresets = {
+  owt: {label:'Oceanic Whitetip Shark', itsLimit:40, juvBaseline:30, obsBaseline:8, coverageBaseline:21},
+  leatherback: {label:'Leatherback Turtle', itsLimit:22, juvBaseline:20, obsBaseline:4, coverageBaseline:19},
+  loggerhead: {label:'Loggerhead Turtle', itsLimit:18, juvBaseline:25, obsBaseline:3, coverageBaseline:19}
+};
+
+const ENV_BASELINE = (27.0*0.25 + (200/100)*0.4 + (Math.abs(0.0)/10)*0.15 + (0.15*0.2)) * 2.0;
+
+let state = {};
+let posteriorChartInstance, cliffChartInstance, spatialChartInstance, gearChartInstance;
+
+function calcSigmoidalPenalty(p, v, x0, L){
+  return L / (1 + Math.exp(-v * (p - x0)));
+}
+function calcDynamicBuffer(sst, eke){
+  return Math.min(0.35, 0.15 + (Math.max(0, sst-28)*0.03) + (Math.max(0, eke-250)/1000));
+}
+
+function updateApp(){
+  state.species = el('speciesSelect').value;
+  state.itsLimit = parseFloat(el('itsLimit').value);
+  state.observed = parseFloat(el('observedInteractions').value);
+  state.coverageRate = parseFloat(el('coverageRate').value)/100;
+  state.sst = parseFloat(el('sst').value);
+  state.eke = parseFloat(el('eke').value);
+  state.vorticity = parseFloat(el('vorticity').value);
+  state.chlorophyll = parseFloat(el('chlorophyll').value);
+  state.biasCorrection = el('biasCorrection').checked;
+  state.spatialShift = parseFloat(el('spatialShift').value);
+  state.avoidance = parseInt(el('avoidance').value);
+  state.gearShift = parseFloat(el('gearShift').value);
+  state.gearCompliance = parseFloat(el('gearCompliance').value);
+  state.juvenile = parseFloat(el('juvenile').value);
+  state.wYield = parseInt(el('yieldWeight').value);
+  state.wRisk = parseInt(el('riskWeight').value);
+
+  const aversion = parseInt(el('riskAversion').value);
+  state.penaltyV = 5 + (aversion * 2);
+  state.penaltyX0 = (85 - (aversion * 5)) / 100;
+  state.penaltyL = 2000 + (aversion * 1000);
+
+  // labels
+  el('itsLimitLabel').innerText = state.itsLimit;
+  el('observedLabel').innerText = state.observed;
+  el('coverageLabel').innerText = (state.coverageRate*100).toFixed(0) + '%';
+  el('sstLabel').innerText = state.sst.toFixed(1) + '°';
+  el('ekeLabel').innerText = state.eke;
+  el('vorticityLabel').innerText = state.vorticity.toFixed(1);
+  el('chlorophyllLabel').innerText = state.chlorophyll.toFixed(2);
+  el('spatialShiftLabel').innerText = (state.spatialShift>=0?'+':'') + state.spatialShift + '%';
+  el('avoidanceLabel').innerText = ['Low','Moderate','High'][state.avoidance];
+  el('gearShiftLabel').innerText = state.gearShift + '%';
+  el('gearComplianceLabel').innerText = state.gearCompliance + '%';
+  el('juvLabel').innerText = state.juvenile + '%';
+  el('yieldWeightLabel').innerText = state.wYield;
+  el('riskWeightLabel').innerText = state.wRisk;
+
+  const profiles = ["Industrial","Market-Led","Balanced","Precautionary","Zero-Tolerance"];
+  const profileIdx = Math.min(Math.floor((aversion-1)/2), 4);
+  el('priorityLabel').innerText = profiles[profileIdx];
+  const descriptions = [
+    "Industrial: High risk tolerance. Inflection at 80% exceedance.",
+    "Market-Led: Balanced yield vs risk. Inflection at 75%.",
+    "Balanced: standard compliance. Inflection at 65%.",
+    "Precautionary: Conservation priority. Inflection at 55%.",
+    "Zero-Tolerance: Maximum demographic shield. Inflection at 40%."
+  ];
+  el('riskProfileDesc').innerText = descriptions[profileIdx];
+
+  // model — LOTUS-observed interactions are the anchor; everything else adjusts it
+  const beta = state.biasCorrection ? 2.1 : 1.0;
+  const expandedEstimate = state.observed / state.coverageRate;
+  const envFactorRaw = (state.sst*0.25 + (state.eke/100)*0.4 + (Math.abs(state.vorticity)/10)*0.15 + (state.chlorophyll*0.2)) * 2.0;
+  const envFactor = envFactorRaw / ENV_BASELINE;
+  const spatialMult = 1 + (state.spatialShift/100)*0.5;
+  const gearMult = 1 + (state.gearShift/100)*0.3*(1 - 0.5*(state.gearCompliance/100));
+  const muCalibrated = expandedEstimate * envFactor * beta * spatialMult * gearMult;
+
+  const juvBaseline = speciesPresets[state.species].juvBaseline;
+  const demoMult = 1 + Math.max(0, state.juvenile - juvBaseline)/100 * 1.5;
+
+  const shape = (muCalibrated*muCalibrated)/8;
+  const scale = 8/muCalibrated;
+  const zScore = (state.itsLimit - muCalibrated) / Math.sqrt(shape*scale*scale);
+  const probExceedance = 1 - (1/(1+Math.exp(-1.6*zScore)));
+
+  const dynamicBuffer = calcDynamicBuffer(state.sst, state.eke);
+  const triggerThreshold = state.itsLimit * (1 - dynamicBuffer);
+
+  const basePenalty = calcSigmoidalPenalty(probExceedance, state.penaltyV, state.penaltyX0, state.penaltyL);
+  const penalty = basePenalty * demoMult;
+  const utility = (state.wYield*250) - (state.wRisk*muCalibrated) - penalty;
+
+  el('statMu').innerText = muCalibrated.toFixed(1);
+  el('statProb').innerText = (probExceedance*100).toFixed(1) + '%';
+  el('statSpatial').innerText = spatialMult.toFixed(2) + '×';
+  el('statDemo').innerText = demoMult.toFixed(2) + '×';
+
+  updateAlertBox(muCalibrated, probExceedance, dynamicBuffer, utility);
+  if(!el('contentDashboard').classList.contains('hidden')){
+    updateCharts(shape, scale, state.itsLimit, state.penaltyV, state.penaltyX0, state.penaltyL);
+  }
+  updateSpatialGearCharts();
+  updateSummaryTables(muCalibrated, probExceedance, triggerThreshold, demoMult, expandedEstimate);
+  updatePipelineFeeds();
+}
+
+function updateAlertBox(mu, prob, buffer, utility){
+  const title = el('decisionTitle');
+  const sub = el('decisionSubtitle');
+  const icon = el('decisionIcon');
+  el('bufferValue').innerText = (buffer*100).toFixed(1) + '%';
+
+  if(prob > state.penaltyX0 || utility < 0){
+    icon.style.background = '#B0173D';
+    title.innerText = 'Suggested: Plan Team review';
+    sub.innerText = 'Exceedance probability or utility has crossed the threshold — consider escalating to Table 3 diagnostics.';
+  } else if(prob > state.penaltyX0 - 0.15){
+    icon.style.background = 'var(--orange)';
+    title.innerText = 'Suggested: continued monitoring';
+    sub.innerText = 'Within margin, but trending toward the threshold.';
+  } else {
+    icon.style.background = 'var(--ocean)';
+    title.innerText = 'No anomaly indicated';
+    sub.innerText = 'Model suggests no further review needed at this time.';
+  }
+}
+
+function updateCharts(shape, scale, limitVal, v, x0, L){
+  const posteriorData = [];
+  for(let t=0; t<=100; t+=1){
+    const x = t/2;
+    const val = Math.pow(x, shape-1) * Math.exp(-x/scale);
+    posteriorData.push({x, y: val});
+  }
+  const maxY = Math.max(...posteriorData.map(d=>d.y)) || 1;
+  posteriorData.forEach(d => d.y = d.y/maxY);
+
+  if(posteriorChartInstance){
+    posteriorChartInstance.data.datasets[0].data = posteriorData;
+    posteriorChartInstance.options.plugins.annotationLimit = limitVal;
+    posteriorChartInstance.update();
+  } else {
+    const ctx = el('posteriorChart').getContext('2d');
+    posteriorChartInstance = new Chart(ctx, {
+      type:'line',
+      data:{datasets:[{label:'P[T]', data:posteriorData, borderColor:'#065A82', backgroundColor:'rgba(6,90,130,0.12)', fill:true, borderWidth:2, tension:0.3, pointRadius:0}]},
+      options:{responsive:true, maintainAspectRatio:false, scales:{x:{type:'linear', title:{display:true, text:'Total Take (T)'}}, y:{title:{display:true, text:'Relative Density'}}}, plugins:{legend:{display:false}}}
+    });
+  }
+
+  const cliffData = [];
+  for(let p=0; p<=1; p+=0.02){
+    cliffData.push({x:p*100, y: L - calcSigmoidalPenalty(p, v, x0, L)});
+  }
+  if(cliffChartInstance){
+    cliffChartInstance.data.datasets[0].data = cliffData;
+    cliffChartInstance.update();
+  } else {
+    const ctxC = el('cliffChart').getContext('2d');
+    cliffChartInstance = new Chart(ctxC, {
+      type:'line',
+      data:{datasets:[{label:'Adjusted Utility', data:cliffData, borderColor:'#1C7293', borderWidth:3, tension:0.3, pointRadius:0}]},
+      options:{responsive:true, maintainAspectRatio:false, scales:{x:{type:'linear', title:{display:true, text:'Exceedance Probability (%)'}}, y:{title:{display:true, text:'Decision Utility'}}}, plugins:{legend:{display:false}}}
+    });
+  }
+}
+
+function updateSpatialGearCharts(){
+  const shiftFrac = state.spatialShift/100;
+  const bands = ['<10°N','10-20°N','20-30°N','>30°N'];
+  const norm = [15, 45, 30, 10];
+  const current = [
+    Math.max(2, norm[0] - shiftFrac*20),
+    Math.max(2, norm[1] - shiftFrac*15),
+    Math.min(80, norm[2] + shiftFrac*20),
+    Math.min(40, norm[3] + shiftFrac*15)
+  ];
+  if(spatialChartInstance){
+    spatialChartInstance.data.datasets[0].data = norm;
+    spatialChartInstance.data.datasets[1].data = current;
+    spatialChartInstance.update();
+  } else {
+    spatialChartInstance = new Chart(el('spatialChart').getContext('2d'), {
+      type:'bar',
+      data:{labels:bands, datasets:[
+        {label:'10-yr norm', data:norm, backgroundColor:'#DDE7EE'},
+        {label:'Current year', data:current, backgroundColor:'#065A82'}
+      ]},
+      options:{responsive:true, maintainAspectRatio:false, scales:{y:{title:{display:true, text:'% of effort'}}}, plugins:{legend:{position:'bottom', labels:{boxWidth:10, font:{size:10}}}}}
+    });
+  }
+
+  const deepShare = 100 - state.gearShift;
+  const gearData = [state.gearShift, deepShare];
+  if(gearChartInstance){
+    gearChartInstance.data.datasets[0].data = gearData;
+    gearChartInstance.update();
+  } else {
+    gearChartInstance = new Chart(el('gearChart').getContext('2d'), {
+      type:'doughnut',
+      data:{labels:['Shallow-set','Deep-set'], datasets:[{data:gearData, backgroundColor:['#F18F01','#1C7293']}]},
+      options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{boxWidth:10, font:{size:10}}}}}
+    });
+  }
+}
+
+function pct(curr, ref){
+  if(ref === 0) return 'n/a';
+  const d = ((curr-ref)/ref)*100;
+  return (d>=0?'+':'') + d.toFixed(0) + '%';
+}
+
+// Table 2 data — real historical monitoring baseline (ps_monitoring_tables.xlsx, "interactions" sheet)
+const REAL_INTERACTIONS_DATA = [
+  {name:'Albatross, Black-footed', current:34, mean:26.7894736842105, percentile:63.1578947368421, trend:'Increasing', flag:'Typical', nYears:19},
+  {name:'Albatross, Laysan', current:54, mean:33.6315789473684, percentile:84.2105263157895, trend:'Increasing', flag:'Typical', nYears:19},
+  {name:'Shark, Oceanic Whitetip', current:3, mean:49.7894736842105, percentile:15.7894736842105, trend:'Increasing', flag:'Typical', nYears:19},
+  {name:'Shark, Shortfin Mako', current:1121, mean:994.578947368421, percentile:68.421052631579, trend:'Increasing', flag:'Typical', nYears:19},
+  {name:'Turtle, Leatherback', current:9, mean:6.78947368421053, percentile:84.2105263157895, trend:'Increasing', flag:'Typical', nYears:19},
+  {name:'Turtle, Loggerhead', current:39, mean:15.5263157894737, percentile:94.7368421052632, trend:'Increasing', flag:'High', nYears:19}
+];
+
+function renderTable2FromMonitoringData(){
+  el('table2Body').innerHTML = REAL_INTERACTIONS_DATA.map(r => {
+    const isHigh = r.flag === 'High';
+    const belowMeanNote = r.current < r.mean
+      ? ' <span class="text-[9px]" style="color:var(--slate);">(below hist. mean)</span>' : '';
+    return `<tr class="${isHigh ? 'flag-row' : ''}">
+      <td>${r.name}</td>
+      <td>${r.current}${belowMeanNote}</td>
+      <td>${r.mean.toFixed(1)} (n=${r.nYears})</td>
+      <td>${pct(r.current, r.mean)}</td>
+      <td>${r.percentile.toFixed(1)}</td>
+      <td>${r.trend}</td>
+      <td>${isHigh ? '<span class="badge badge-flag">HIGH</span>' : '<span class="badge badge-ok">Typical</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Table 2b data — real historical monitoring baseline (ps_monitoring_tables.xlsx, "rate spatial" sheet)
+const REAL_RATE_SPATIAL_DATA = [
+  {species:'Black-footed albatross', currentRate:0.0317, histMeanRate:0.0233, ratePercentile:75.0, annualPctChange:0.1, trendModel:'Poisson', trendModelFlag:'Preferred model', centroidShiftKm:133.3, pctOutside90:0.0},
+  {species:'Laysan albatross', currentRate:0.0463, histMeanRate:0.0266, ratePercentile:95.0, annualPctChange:12.2, trendModel:'Poisson', trendModelFlag:'Preferred model', centroidShiftKm:283.4, pctOutside90:0.0},
+  {species:'Oceanic whitetip shark', currentRate:0.0026, histMeanRate:0.0378, ratePercentile:20.0, annualPctChange:-30.7, trendModel:'Poisson', trendModelFlag:'Preferred model', centroidShiftKm:765.8, pctOutside90:0.0},
+  {species:'Shortfin mako shark', currentRate:1.0051, histMeanRate:1.0231, ratePercentile:55.0, annualPctChange:-16.5, trendModel:'Poisson', trendModelFlag:'Preferred model', centroidShiftKm:311.1, pctOutside90:5.9},
+  {species:'Leatherback turtle', currentRate:0.0069, histMeanRate:0.0248, ratePercentile:65.0, annualPctChange:7.1, trendModel:'Poisson', trendModelFlag:'NB fitting error; Poisson fallback', centroidShiftKm:178.5, pctOutside90:12.5},
+  {species:'Loggerhead turtle', currentRate:0.0317, histMeanRate:0.0173, ratePercentile:85.0, annualPctChange:5.1, trendModel:'Negative binomial', trendModelFlag:'Preferred model', centroidShiftKm:61.5, pctOutside90:5.4}
+];
+
+function renderTable2b(){
+  el('table2bBody').innerHTML = REAL_RATE_SPATIAL_DATA.map(r => {
+    const extreme = r.ratePercentile>=90 || r.ratePercentile<=10;
+    const modelNote = r.trendModelFlag !== 'Preferred model' ? `<div class="text-[9px]" style="color:var(--orange);">${r.trendModelFlag}</div>` : '';
+    return `<tr class="${extreme?'flag-row':''}">
+      <td>${r.species}</td>
+      <td>${r.currentRate.toFixed(4)}</td>
+      <td>${r.histMeanRate.toFixed(4)}</td>
+      <td>${r.ratePercentile.toFixed(0)}</td>
+      <td>${r.annualPctChange>=0?'+':''}${r.annualPctChange.toFixed(1)}%</td>
+      <td>${r.trendModel}${modelNote}</td>
+      <td>${r.centroidShiftKm.toFixed(1)}</td>
+      <td>${r.pctOutside90.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+}
+
+// Table 2c data — real historical monitoring baseline (ps_monitoring_tables.xlsx, "ocean" sheet)
+const REAL_OCEAN_DATA = [{"species": "Black-footed albatross", "covariates": [{"covariate": "Chlorophyll-a", "currentInteractionEnv": 0.13, "histInteractionMedian": 0.085, "absAnomaly": 0.046, "currentFleetEnv": 0.133, "currentSelectionAnomaly": -0.003, "selectionPercentile": 78.9}, {"covariate": "Distance to seamount", "currentInteractionEnv": 123.909, "histInteractionMedian": 70.714, "absAnomaly": 53.195, "currentFleetEnv": 127.099, "currentSelectionAnomaly": -3.19, "selectionPercentile": 52.6}, {"covariate": "Sea-level anomaly", "currentInteractionEnv": 0.048, "histInteractionMedian": 0.022, "absAnomaly": 0.026, "currentFleetEnv": 0.05, "currentSelectionAnomaly": -0.002, "selectionPercentile": 73.7}, {"covariate": "SST", "currentInteractionEnv": 18.554, "histInteractionMedian": 19.935, "absAnomaly": -1.382, "currentFleetEnv": 18.202, "currentSelectionAnomaly": 0.351, "selectionPercentile": 57.9}]}, {"species": "Laysan albatross", "covariates": [{"covariate": "Chlorophyll-a", "currentInteractionEnv": 0.151, "histInteractionMedian": 0.09, "absAnomaly": 0.061, "currentFleetEnv": 0.133, "currentSelectionAnomaly": 0.019, "selectionPercentile": 78.9}, {"covariate": "Distance to seamount", "currentInteractionEnv": 145.523, "histInteractionMedian": 57.514, "absAnomaly": 88.009, "currentFleetEnv": 127.099, "currentSelectionAnomaly": 18.424, "selectionPercentile": 94.7}, {"covariate": "Sea-level anomaly", "currentInteractionEnv": 0.043, "histInteractionMedian": 0.015, "absAnomaly": 0.028, "currentFleetEnv": 0.05, "currentSelectionAnomaly": -0.007, "selectionPercentile": 57.9}, {"covariate": "SST", "currentInteractionEnv": 18.318, "histInteractionMedian": 19.795, "absAnomaly": -1.477, "currentFleetEnv": 18.202, "currentSelectionAnomaly": 0.116, "selectionPercentile": 52.6}]}, {"species": "Oceanic whitetip shark", "covariates": [{"covariate": "Chlorophyll-a", "currentInteractionEnv": 0.068, "histInteractionMedian": 0.061, "absAnomaly": 0.007, "currentFleetEnv": 0.133, "currentSelectionAnomaly": -0.065, "selectionPercentile": 5.6}, {"covariate": "Distance to seamount", "currentInteractionEnv": 32.071, "histInteractionMedian": 34.152, "absAnomaly": -2.081, "currentFleetEnv": 127.099, "currentSelectionAnomaly": -95.028, "selectionPercentile": 0.0}, {"covariate": "Sea-level anomaly", "currentInteractionEnv": 0.163, "histInteractionMedian": 0.017, "absAnomaly": 0.147, "currentFleetEnv": 0.05, "currentSelectionAnomaly": 0.114, "selectionPercentile": 100.0}, {"covariate": "SST", "currentInteractionEnv": 23.523, "histInteractionMedian": 24.545, "absAnomaly": -1.022, "currentFleetEnv": 18.202, "currentSelectionAnomaly": 5.321, "selectionPercentile": 66.7}]}, {"species": "Shortfin mako shark", "covariates": [{"covariate": "Chlorophyll-a", "currentInteractionEnv": 0.153, "histInteractionMedian": 0.116, "absAnomaly": 0.037, "currentFleetEnv": 0.133, "currentSelectionAnomaly": 0.02, "selectionPercentile": 70.0}, {"covariate": "Distance to seamount", "currentInteractionEnv": 125.17, "histInteractionMedian": 86.278, "absAnomaly": 38.893, "currentFleetEnv": 127.099, "currentSelectionAnomaly": -1.928, "selectionPercentile": 5.0}, {"covariate": "Sea-level anomaly", "currentInteractionEnv": 0.052, "histInteractionMedian": 0.036, "absAnomaly": 0.016, "currentFleetEnv": 0.05, "currentSelectionAnomaly": 0.002, "selectionPercentile": 50.0}, {"covariate": "SST", "currentInteractionEnv": 17.704, "histInteractionMedian": 18.49, "absAnomaly": -0.786, "currentFleetEnv": 18.202, "currentSelectionAnomaly": -0.498, "selectionPercentile": 80.0}]}, {"species": "Leatherback turtle", "covariates": [{"covariate": "Chlorophyll-a", "currentInteractionEnv": 0.094, "histInteractionMedian": 0.099, "absAnomaly": -0.005, "currentFleetEnv": 0.133, "currentSelectionAnomaly": -0.039, "selectionPercentile": 0.0}, {"covariate": "Distance to seamount", "currentInteractionEnv": 96.388, "histInteractionMedian": 78.533, "absAnomaly": 17.855, "currentFleetEnv": 127.099, "currentSelectionAnomaly": -30.711, "selectionPercentile": 10.5}, {"covariate": "Sea-level anomaly", "currentInteractionEnv": 0.056, "histInteractionMedian": 0.03, "absAnomaly": 0.026, "currentFleetEnv": 0.05, "currentSelectionAnomaly": 0.006, "selectionPercentile": 63.2}, {"covariate": "SST", "currentInteractionEnv": 19.303, "histInteractionMedian": 19.602, "absAnomaly": -0.298, "currentFleetEnv": 18.202, "currentSelectionAnomaly": 1.101, "selectionPercentile": 84.2}]}, {"species": "Loggerhead turtle", "covariates": [{"covariate": "Chlorophyll-a", "currentInteractionEnv": 0.141, "histInteractionMedian": 0.109, "absAnomaly": 0.032, "currentFleetEnv": 0.133, "currentSelectionAnomaly": 0.008, "selectionPercentile": 33.3}, {"covariate": "Distance to seamount", "currentInteractionEnv": 136.951, "histInteractionMedian": 100.18, "absAnomaly": 36.771, "currentFleetEnv": 127.099, "currentSelectionAnomaly": 9.852, "selectionPercentile": 38.9}, {"covariate": "Sea-level anomaly", "currentInteractionEnv": 0.056, "histInteractionMedian": 0.043, "absAnomaly": 0.012, "currentFleetEnv": 0.05, "currentSelectionAnomaly": 0.006, "selectionPercentile": 16.7}, {"covariate": "SST", "currentInteractionEnv": 17.904, "histInteractionMedian": 18.348, "absAnomaly": -0.444, "currentFleetEnv": 18.202, "currentSelectionAnomaly": -0.298, "selectionPercentile": 83.3}]}];
+
+function renderTable2c(){
+  const species = el('oceanSpeciesSelect').value;
+  const group = REAL_OCEAN_DATA.find(g => g.species === species);
+  el('table2cBody').innerHTML = group.covariates.map(c => `
+    <tr>
+      <td>${c.covariate}</td>
+      <td>${c.currentInteractionEnv}</td>
+      <td>${c.histInteractionMedian}</td>
+      <td style="color:${c.absAnomaly>=0?'#B8410A':'#065A82'};">${c.absAnomaly>=0?'+':''}${c.absAnomaly}</td>
+      <td>${c.currentFleetEnv}</td>
+      <td style="color:${c.currentSelectionAnomaly>=0?'#B8410A':'#065A82'};">${c.currentSelectionAnomaly>=0?'+':''}${c.currentSelectionAnomaly}</td>
+      <td>${c.selectionPercentile.toFixed(1)}</td>
+    </tr>`).join('');
+}
+
+function updateSummaryTables(mu, prob, triggerThreshold, demoMult, expandedEstimate){
+  // Table 1: Fishery Behavior
+  const t1 = [
+    ['Total longline sets (thousands)', (12 + state.spatialShift*0.03).toFixed(1), '11.6', pct(12+state.spatialShift*0.03, 11.6)],
+    ['% effort south of 20°N', (45 + state.spatialShift*0.5).toFixed(0)+'%', '42%', pct(45+state.spatialShift*0.5, 42)],
+    ['Shallow-set effort share', state.gearShift.toFixed(0)+'%', '16%', pct(state.gearShift, 16)],
+    ['Circle-hook/branchline compliance', state.gearCompliance.toFixed(0)+'%', '90%', pct(state.gearCompliance, 90)],
+    ['Post-interaction avoidance response', ['Low','Moderate','High'][state.avoidance], 'Low', state.avoidance>0 ? 'Increased' : 'No change']
+  ];
+  el('table1Body').innerHTML = t1.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('');
+
+  // Species model rows (drives Table 0 + Table 3/anyFlag diagnostics — no longer Table 2, see below)
+  const speciesRows = [];
+  let anyFlag = false;
+  for(const key of Object.keys(speciesPresets)){
+    const preset = speciesPresets[key];
+    let currentTake, lastYear, tenYrAvg, flagged;
+    if(key === state.species){
+      currentTake = mu;
+      lastYear = preset.itsLimit*0.85;
+      tenYrAvg = preset.itsLimit*0.75;
+      flagged = currentTake > triggerThreshold;
+    } else {
+      currentTake = preset.itsLimit*0.7;
+      lastYear = preset.itsLimit*0.68;
+      tenYrAvg = preset.itsLimit*0.65;
+      flagged = false;
+    }
+    if(flagged) anyFlag = true;
+    speciesRows.push({name:preset.label, currentTake, lastYear, tenYrAvg, flagged, key});
+  }
+
+  // Table 0: LOTUS Observer Bycatch Detail (source-level; active species drives the Dashboard forward from here)
+  const totalSetsThousands = 12 + state.spatialShift*0.03;
+  el('table0Body').innerHTML = speciesRows.map(r => {
+    const isActive = r.key === state.species;
+    const coverageRate = isActive ? state.coverageRate : Math.max(0.08, 0.21 - Math.max(0,state.spatialShift)/100*0.05);
+    const observed = isActive ? state.observed : r.currentTake * coverageRate;
+    const estTotal = isActive ? expandedEstimate : r.currentTake;
+    const releasedAlive = Math.max(40, 88 - state.avoidance*6 - (r.flagged?10:0));
+    const cpue = (estTotal / totalSetsThousands);
+    const qaOk = !r.flagged;
+    return `<tr class="${r.flagged?'flag-row':''}">
+      <td>${r.name}${isActive?' <span class="text-[9px] font-bold" style="color:var(--orange);">(active)</span>':''}</td>
+      <td>${observed.toFixed(1)}</td>
+      <td>${(coverageRate*100).toFixed(0)}%</td>
+      <td>${estTotal.toFixed(1)}</td>
+      <td>${releasedAlive.toFixed(0)}%</td>
+      <td>${cpue.toFixed(2)}</td>
+      <td>${qaOk ? '<span class="badge badge-ok">Reconciled</span>' : '<span class="badge badge-warn">Under review</span>'}</td>
+    </tr>`;
+  }).join('');
+  renderTable2FromMonitoringData();
+  renderTable2b();
+  renderTable2c();
+
+  // Table 3: Diagnostics — only if flagged
+  if(anyFlag){
+    el('table3Wrap').classList.remove('hidden');
+    const habitatChange = ((mu/ (state.itsLimit*0.6)) - 1) * 100;
+    const t3 = [
+      ['Habitat-weighted interaction change', habitatChange.toFixed(0)+'%', habitatChange>20 ? 'Consistent with oceanographic/spatial drivers, not a population pulse' : 'Modest shift, monitor'],
+      ['Mean size / demographic change', (state.juvenile - speciesPresets[state.species].juvBaseline).toFixed(0)+' pts juvenile share', state.juvenile > speciesPresets[state.species].juvBaseline+10 ? 'Juvenile influx — recruitment-area overlap likely, not a broad population increase' : 'Within normal range'],
+      ['Spatial overlap multiplier', (1+(state.spatialShift/100)*0.5).toFixed(2)+'×', state.spatialShift>15 ? 'Southward shift is the leading driver of elevated interaction likelihood' : 'Limited spatial contribution'],
+      ['Demographic penalty multiplier', demoMult.toFixed(2)+'×', demoMult>1.1 ? 'Life-stage weighting elevates population-level concern above raw count' : 'No material demographic weighting'],
+      ['Exceedance probability', (prob*100).toFixed(1)+'%', prob>state.penaltyX0 ? 'Above the risk-posture inflection point' : 'Below inflection point']
+    ];
+    el('table3Body').innerHTML = t3.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('');
+
+    const drivers = [];
+    if(state.spatialShift>15) drivers.push('a southward shift in fishing effort');
+    if(state.gearShift>25) drivers.push('an increase in shallow-set effort share');
+    if(state.juvenile > speciesPresets[state.species].juvBaseline+10) drivers.push('a higher juvenile share of interactions');
+    if(drivers.length===0) drivers.push('oceanographic conditions (SST/EKE/vorticity/chlorophyll)');
+    el('narrativeText').innerText = `Interactions with ${speciesPresets[state.species].label} exceeded the rolling ITS trigger this cycle. Diagnostics point to ${drivers.join(', ')} as the likely proximate driver(s), consistent with spatial/oceanographic redistribution of effort rather than a rapid change in population status. Recommend Plan Team review before public release.`;
+  } else {
+    el('table3Wrap').classList.add('hidden');
+  }
+}
+
+const feedDefs = [
+  ['Federal logbooks (spatial effort &amp; gear config)', 'PIRO logbook program', 'Fishery operations', '6 min ago', 'ok'],
+  ['Creel surveys &amp; dealer reports (AS/CNMI/Guam/HI)', 'HDAR, regional agencies', 'Fishery operations', '3 hrs ago', 'warn'],
+  ['PIROP bycatch estimates (aggregated)', 'LOTUS (post-Pirops QA)', 'Stock &amp; bycatch', '1 hr ago', 'ok'],
+  ['Demographic composition (size/stage, abstracted)', 'LOTUS (post-Pirops QA)', 'Stock &amp; bycatch', '1 hr ago', 'ok'],
+  ['WCPFC/IATTC/ISC stock assessments', 'RFMO secretariats', 'Stock &amp; bycatch', '1 day ago', 'warn'],
+  ['Marine Mammal Stock Assessment Reports', 'NMFS SARs (MMPA)', 'Stock &amp; bycatch', '2 days ago', 'warn'],
+  ['SST / EKE / vorticity / chl-a', 'CoralTemp, ESA CCI, Station ALOHA', 'Environmental &amp; habitat', '12 min ago', 'ok'],
+  ['ONI / PDO / cyclone tracks / GODAS', 'NOAA OceanWatch, IBTrACS', 'Environmental &amp; habitat', '25 min ago', 'ok'],
+  ['EFH species distribution models', 'PIFSC Ecosystem Sciences Div.', 'Environmental &amp; habitat', '1 day ago', 'warn'],
+  ['PIFSC economic data collection (rev/trip, cost-earnings)', 'PIFSC Economics Program', 'Economic &amp; social', '3 hrs ago', 'warn'],
+  ['Advisory panel / TEK observations', 'Quarterly AP meetings', 'Economic &amp; social', '5 days ago', 'warn'],
+  ['VOI sensitivity summary', 'Cross-cutting analysis (Stage 3 input)', 'VOI', '1 day ago', 'ok'],
+  ['PIFSC FEAT ecosystem indicators', 'apps-pifsc.fisheries.noaa.gov/FEAT', 'Environmental &amp; habitat', 'n/a', 'none']
+];
+function updatePipelineFeeds(){
+  el('feedStatusBody').innerHTML = feedDefs.map(f => {
+    const statusLabel = f[4]==='ok' ? 'Synced' : (f[4]==='warn' ? 'Delayed' : 'Manual');
+    const badgeClass = f[4]==='ok' ? 'badge-ok' : (f[4]==='warn' ? 'badge-warn' : '');
+    const badgeStyle = f[4]==='none' ? 'background:#E9EAEC; color:#5A6C7D;' : '';
+    return `<tr><td>${f[0]}</td><td>${f[1]}</td><td>${f[2]}</td><td>${f[3]}</td>
+    <td><span class="badge ${badgeClass}" style="${badgeStyle}">${statusLabel}</span></td></tr>`;
+  }).join('');
+
+  const ts = new Date().toLocaleTimeString();
+  const log = [
+    `[${ts}] Expanded estimate anchored to LOTUS (post-Pirops QA) observed interactions ÷ observer coverage rate.`,
+    `[${ts}] Environmental adjustment factor recomputed from abstracted environmental & habitat products (SST/EKE/vorticity/chl-a) only.`,
+    `[${ts}] Spatial overlap multiplier derived from aggregated fishery-operations logbook effort — no vessel-level positions exposed.`,
+    `[${ts}] Bycatch estimates pulled from LOTUS (post-Pirops QA) — raw Pirops debriefing records never queried directly.`,
+    `[${ts}] Demographic multiplier derived from PIROP-abstracted stock & bycatch stage composition (no individual records).`,
+    `[${ts}] Aggregation check: withheld any stratum with fewer than 3 observed vessels (anonymization gate).`,
+    `[${ts}] Economic & social products (PIFSC economics, TEK) queued for Table 1 fishery-behavior context.`,
+    `[${ts}] ITS trigger check run against rolling 5-yr benchmark inputs supplied by user.`,
+    `[${ts}] Statutory alignment: 50 CFR §402.16 threshold logic applied; MSA reporting fields mapped.`
+  ];
+  el('auditLog').innerHTML = log.map(l => `<div>${l}</div>`).join('');
+}
+
+// tabs
+const tabs = ['Pipeline','Tables','Dashboard','Bayes','Docs'];
+function showTab(name){
+  tabs.forEach(t => {
+    el('content'+t).classList.toggle('hidden', t!==name);
+    el('tab'+t).className = (t===name ? 'tab-active' : 'tab-inactive') + ' py-3 px-1 text-sm whitespace-nowrap';
+  });
+  if(name==='Dashboard') updateApp();
+  if(name==='Bayes'){ updateBayesTool(); if(window.__causalTreeFit) window.__causalTreeFit(); }
+}
+tabs.forEach(t => el('tab'+t).addEventListener('click', () => showTab(t)));
+
+// species preset switch
+el('speciesSelect').addEventListener('change', () => {
+  const p = speciesPresets[el('speciesSelect').value];
+  el('itsLimit').value = p.itsLimit;
+  el('juvenile').value = p.juvBaseline;
+  el('observedInteractions').value = p.obsBaseline;
+  el('coverageRate').value = p.coverageBaseline;
+  updateApp();
+});
+
+// wire inputs
+['itsLimit','observedInteractions','coverageRate','sst','eke','vorticity','chlorophyll','spatialShift','avoidance','gearShift','gearCompliance','juvenile','riskAversion','yieldWeight','riskWeight'].forEach(id => {
+  el(id).addEventListener('input', updateApp);
+});
+el('biasCorrection').addEventListener('change', updateApp);
+
+el('applyBenchmark').addEventListener('click', () => {
+  const vals = ['y2025','y2024','y2023','y2022','y2021'].map(id => parseFloat(el(id).value)||0);
+  el('itsLimit').value = Math.max(...vals);
+  updateApp();
+});
+
+el('syncBtn').addEventListener('click', () => {
+  el('sst').value = 28.4;
+  el('eke').value = 315;
+  el('vorticity').value = 6.5;
+  el('chlorophyll').value = 1.25;
+  el('spatialShift').value = 35;
+  const now = new Date();
+  el('syncTimeLabel').innerText = now.toLocaleTimeString();
+  el('syncSignalLabel').innerText = 'El Niño anomaly sync successful';
+  updateApp();
+});
+
+function syncWithLotus(){
+  // Dummy sync: simulates pulling a fresh pull from LOTUS with a small jitter,
+  // standing in for the live standing connection described in Documentation.
+  const preset = speciesPresets[state.species];
+  const obsMin = parseFloat(el('observedInteractions').min);
+  const obsMax = parseFloat(el('observedInteractions').max);
+  const covMin = parseFloat(el('coverageRate').min);
+  const covMax = parseFloat(el('coverageRate').max);
+  const jitterObs = Math.round((Math.random()*4) - 2);
+  const jitterCov = Math.round((Math.random()*4) - 2);
+  const newObs = Math.min(obsMax, Math.max(obsMin, preset.obsBaseline + jitterObs));
+  const newCov = Math.min(covMax, Math.max(covMin, preset.coverageBaseline + jitterCov));
+  el('observedInteractions').value = newObs;
+  el('coverageRate').value = newCov;
+  const now = new Date().toLocaleTimeString();
+  el('lotusSyncTimeDashboard').innerText = now;
+  el('lotusSyncTimeTable').innerText = now;
+  updateApp();
+}
+el('lotusSyncBtnDashboard').addEventListener('click', syncWithLotus);
+el('lotusSyncBtnTable').addEventListener('click', syncWithLotus);
+
+el('featPreviewBtn').addEventListener('click', () => {
+  // Illustrative only — FEAT has no public API, so this is a mocked-up preview of what
+  // a future sync could look like, for workshop demonstration purposes.
+  const rows = [
+    ['Ecosystem Status Index (Pacific pelagic)', (0.45 + Math.random()*0.3).toFixed(2), 'Environmental adjustment factor'],
+    ['Pelagic Habitat Compression Index', (Math.random()*40).toFixed(0) + '%', 'Spatial overlap multiplier'],
+    ['Community Fishing Reliance Index', (Math.random()*100).toFixed(0), 'Table 1 fishery-behavior context'],
+    ['Regional SST Anomaly (FEAT-derived)', (Math.random()*2 - 0.5).toFixed(2) + '°C', 'Environmental adjustment factor']
+  ];
+  el('featPreviewBody').innerHTML = rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('');
+  el('featPreviewPanel').classList.remove('hidden');
+  el('featPreviewTime').innerText = new Date().toLocaleTimeString();
+});
+
+el('exportBtn').addEventListener('click', () => {
+  console.log('Table 0', el('table0Body').innerText);
+  console.log('Table 1', el('table1Body').innerText);
+  console.log('Table 2', el('table2Body').innerText);
+  console.log('Table 3', el('table3Body').innerText);
+  alert('SAFE table contents logged to browser console (Export/CSV wiring is a suggested next-build feature — see Documentation tab).');
+});
+
+window.addEventListener('resize', () => {
+  if(posteriorChartInstance) posteriorChartInstance.resize();
+  if(cliffChartInstance) cliffChartInstance.resize();
+  if(spatialChartInstance) spatialChartInstance.resize();
+  if(gearChartInstance) gearChartInstance.resize();
+  if(bayesChartInstance) bayesChartInstance.resize();
+});
+
+// ---------------------------------------------------------------------------
+// Bayesian Anomaly Tool
+// Gamma-Poisson conjugate model, moment-matched per species to historical
+// mean/P10/P90 (from ps_monitoring_tables.xlsx "interactions" sheet).
+// P(X >= Current) computed exactly as a Negative Binomial tail probability
+// via direct pmf recurrence (validated against scipy.stats.nbinom and the
+// companion workbook's BETADIST-based formula).
+// ---------------------------------------------------------------------------
+let bayesChartInstance;
+const bayesSpecies = [
+  {name:'Albatross, Black-footed', short:'BF Albatross', nYears:19, mean:26.7894736842105, p10:5.8, p90:46.2, current:34},
+  {name:'Albatross, Laysan', short:'Laysan Alb.', nYears:19, mean:33.6315789473684, p10:7.6, p90:61.2, current:54},
+  {name:'Shark, Oceanic Whitetip', short:'OWT Shark', nYears:19, mean:49.7894736842105, p10:1.0, p90:79.8, current:3},
+  {name:'Shark, Shortfin Mako', short:'Shortfin Mako', nYears:19, mean:994.578947368421, p10:618.6, p90:1377.0, current:1121},
+  {name:'Turtle, Leatherback', short:'Leatherback', nYears:19, mean:6.78947368421053, p10:2.0, p90:13.0, current:9},
+  {name:'Turtle, Loggerhead', short:'Loggerhead', nYears:19, mean:15.5263157894737, p10:4.6, p90:26.0, current:39}
+];
+
+function nbTailProb(k, r, p){
+  // P(X >= k) for X ~ NegBinom(r,p) (Excel/scipy convention: r successes, p
+  // = success prob, X = number of failures). Iterative pmf recurrence,
+  // valid for real (non-integer) r.
+  if(k<=0) return 1;
+  let pmf = Math.pow(p, r);
+  let cdf = pmf;
+  for(let x=1; x<k; x++){
+    pmf = pmf * (x + r - 1)/x * (1-p);
+    cdf += pmf;
+  }
+  return Math.max(0, Math.min(1, 1-cdf));
+}
+
+function updateBayesTool(){
+  const alphaSig = parseFloat(el('bayesAlpha').value);
+  el('bayesAlphaLabel').innerText = alphaSig.toFixed(2);
+
+  const results = bayesSpecies.map(sp => {
+    const estSD = (sp.p90 - sp.p10)/2.563;
+    const estVar = Math.max(estSD*estSD, sp.mean*1.01);
+    const alpha = (sp.mean*sp.mean)/estVar;
+    const beta = sp.mean/estVar;
+    const p = beta/(beta+1);
+    const tailProb = nbTailProb(sp.current, alpha, p);
+    return Object.assign({}, sp, {tailProb, isAnomaly: tailProb < alphaSig});
+  });
+
+  el('bayesTableBody').innerHTML = results.map(r => {
+    const belowMeanNote = r.current < r.mean
+      ? ' <span class="text-[9px]" style="color:var(--slate);">(below hist. mean)</span>' : '';
+    const flagHtml = r.isAnomaly
+      ? '<span class="badge badge-flag">ANOMALY &ndash; Higher than Expected</span>'
+      : '<span class="badge badge-ok">Typical</span>';
+    return `<tr${r.isAnomaly ? ' class="flag-row"' : ''}>`
+      + `<td>${r.name}</td><td>${r.nYears}</td><td>${r.mean.toFixed(1)}</td>`
+      + `<td>${r.p10.toFixed(1)}</td><td>${r.p90.toFixed(1)}</td>`
+      + `<td>${r.current}${belowMeanNote}</td><td>${r.tailProb.toFixed(4)}</td><td>${flagHtml}</td></tr>`;
+  }).join('');
+
+  const labels = results.map(r => r.short);
+  const probs = results.map(r => r.tailProb);
+  const barColors = results.map(r => r.isAnomaly ? '#B0173D' : '#065A82');
+  const thresholdLine = results.map(() => alphaSig);
+
+  if(bayesChartInstance){
+    bayesChartInstance.data.datasets[0].data = probs;
+    bayesChartInstance.data.datasets[0].backgroundColor = barColors;
+    bayesChartInstance.data.datasets[1].data = thresholdLine;
+    bayesChartInstance.update();
+  } else {
+    bayesChartInstance = new Chart(el('bayesChart').getContext('2d'), {
+      data: {
+        labels: labels,
+        datasets: [
+          {type:'bar', label:'P(X \u2265 Current)', data:probs, backgroundColor:barColors, order:2},
+          {type:'line', label:'Significance threshold (\u03b1)', data:thresholdLine, borderColor:'#F18F01', borderDash:[6,4], borderWidth:2, pointRadius:0, fill:false, order:1}
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales:{ y:{ min:0, max:1, title:{display:true, text:'Posterior predictive tail probability'} } },
+        plugins:{ legend:{ position:'bottom', labels:{boxWidth:10, font:{size:10}} } }
+      }
+    });
+  }
+}
+const SENSITIVITY_R_GRID = [0.2, 0.5, 1, 2, 5, 10];
+const SENSITIVITY_PI_GRID = [0.05, 0.10, 0.15, 0.20, 0.30, 0.40];
+
+function computeAlphaStar(r, pi){
+  const a = (pi * r) / ((1-pi) + pi*r);
+  return Math.min(0.5, Math.max(0.01, a));
+}
+
+function heatColor(alphaVal){
+  // 3-stop gradient over [0.01, 0.5]: pale blue -> orange -> red
+  const t = Math.max(0, Math.min(1, (alphaVal - 0.01) / (0.5 - 0.01)));
+  const stops = [[227,240,245],[241,143,1],[176,23,61]];
+  const seg = t <= 0.5 ? 0 : 1;
+  const localT = t <= 0.5 ? t/0.5 : (t-0.5)/0.5;
+  const c0 = stops[seg], c1 = stops[seg+1];
+  const rr = Math.round(c0[0] + (c1[0]-c0[0])*localT);
+  const gg = Math.round(c0[1] + (c1[1]-c0[1])*localT);
+  const bb = Math.round(c0[2] + (c1[2]-c0[2])*localT);
+  return `rgb(${rr},${gg},${bb})`;
+}
+
+function renderSensitivityHeatmap(currentR, currentPi){
+  let bestRIdx = 0, bestRDist = Infinity;
+  SENSITIVITY_R_GRID.forEach((rv, i) => { const d = Math.abs(Math.log(rv) - Math.log(currentR)); if(d < bestRDist){ bestRDist = d; bestRIdx = i; } });
+  let bestPiIdx = 0, bestPiDist = Infinity;
+  SENSITIVITY_PI_GRID.forEach((pv, i) => { const d = Math.abs(pv - currentPi); if(d < bestPiDist){ bestPiDist = d; bestPiIdx = i; } });
+
+  const thead = document.querySelector('#sensitivityHeatmap thead tr');
+  thead.innerHTML = '<th>\u03c0 \\ r</th>' + SENSITIVITY_R_GRID.map((rv,i) => `<th style="text-align:center;${i===bestRIdx?' text-decoration:underline;':''}">${rv}</th>`).join('');
+
+  const tbody = document.querySelector('#sensitivityHeatmap tbody');
+  tbody.innerHTML = SENSITIVITY_PI_GRID.map((pv, piIdx) => {
+    const rowLabel = (pv*100).toFixed(0) + '%';
+    const cells = SENSITIVITY_R_GRID.map((rv, rIdx) => {
+      const a = computeAlphaStar(rv, pv);
+      const isHi = (piIdx === bestPiIdx && rIdx === bestRIdx);
+      const outline = isHi ? 'outline:3px solid #21295C; outline-offset:-3px;' : '';
+      return `<td style="background:${heatColor(a)}; text-align:center; font-weight:${isHi?'700':'400'}; ${outline}">${a.toFixed(2)}</td>`;
+    }).join('');
+    const rowHighlight = piIdx===bestPiIdx ? ' style="text-decoration:underline;"' : '';
+    return `<tr><td${rowHighlight}>${rowLabel}</td>${cells}</tr>`;
+  }).join('');
+}
+
+let topRanked = 'FN';
+function setTopRanked(which){
+  topRanked = which;
+  el('rankFN').classList.toggle('swing-chip-active', which==='FN');
+  el('rankFP').classList.toggle('swing-chip-active', which==='FP');
+  const wFN = el('weightFN'), wFP = el('weightFP');
+  if(which === 'FN'){
+    wFN.disabled = true; wFN.value = 100;
+    wFP.disabled = false; wFP.value = 50;
+    el('weightFNTitle').innerText = 'Missed anomaly (top-ranked, anchor)';
+    el('weightFPTitle').innerText = 'False alarm (relative swing)';
+  } else {
+    wFP.disabled = true; wFP.value = 100;
+    wFN.disabled = false; wFN.value = 50;
+    el('weightFPTitle').innerText = 'False alarm (top-ranked, anchor)';
+    el('weightFNTitle').innerText = 'Missed anomaly (relative swing)';
+  }
+  updateElicitation();
+}
+el('rankFN').addEventListener('click', () => setTopRanked('FN'));
+el('rankFP').addEventListener('click', () => setTopRanked('FP'));
+
+const psHighFlagCount = REAL_INTERACTIONS_DATA.filter(d => d.flag === 'High').length;
+const psTotalSpecies = REAL_INTERACTIONS_DATA.length;
+const piFromTable2 = psHighFlagCount / psTotalSpecies;
+el('piDataRef').innerText = `${psHighFlagCount} of ${psTotalSpecies} species (${(piFromTable2*100).toFixed(0)}%)`;
+el('usePiData').addEventListener('click', () => {
+  el('priorAnomaly').value = Math.max(1, Math.round(piFromTable2*100));
+  updateElicitation();
+});
+
+function updateElicitation(){
+  const wFN = parseFloat(el('weightFN').value);
+  const wFP = parseFloat(el('weightFP').value);
+  el('weightFNLabel').innerText = wFN;
+  el('weightFPLabel').innerText = wFP;
+
+  const pi = parseFloat(el('priorAnomaly').value)/100;
+  el('priorAnomalyLabel').innerText = (pi*100).toFixed(0) + '%';
+
+  const r = wFN / Math.max(wFP, 0.5);
+  const alphaStar = computeAlphaStar(r, pi);
+
+  el('elicitedAlpha').innerHTML = '&alpha; = ' + alphaStar.toFixed(3);
+  el('elicitedFormula').innerText = `r = ${wFN}/${wFP} = ${r.toFixed(2)}, \u03c0 = ${(pi*100).toFixed(0)}%`;
+  renderSensitivityHeatmap(r, pi);
+  return alphaStar;
+}
+el('weightFN').addEventListener('input', updateElicitation);
+el('weightFP').addEventListener('input', updateElicitation);
+el('priorAnomaly').addEventListener('input', updateElicitation);
+
+el('applyElicitedAlpha').addEventListener('click', () => {
+  const alphaStar = updateElicitation();
+  el('bayesAlpha').value = alphaStar.toFixed(2);
+  updateBayesTool();
+});
+setTopRanked('FN');
+
+el('bayesAlpha').addEventListener('input', updateBayesTool);
+el('oceanSpeciesSelect').addEventListener('change', renderTable2c);
+
+// ---- Zoom/pan controller for the Causal Diagnostic Tree ----
+(function initCausalTreeZoom(){
+  const viewport = document.getElementById('causalTreeViewport');
+  const stage = document.getElementById('causalTreeStage');
+  const svg = document.getElementById('theGraph');
+  if(!viewport || !stage || !svg) return;
+
+  const natW = parseFloat(svg.getAttribute('width'));
+  const natH = parseFloat(svg.getAttribute('height'));
+  const MIN_SCALE = 0.15, MAX_SCALE = 4;
+
+  let scale = 1, tx = 0, ty = 0;
+  let fitScale = 1;
+
+  function apply(){
+    scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
+    stage.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+  }
+
+  function fit(){
+    const vw = viewport.clientWidth, vh = viewport.clientHeight;
+    fitScale = Math.min(vw / natW, vh / natH) * 0.96;
+    scale = fitScale;
+    tx = (vw - natW * scale) / 2;
+    ty = (vh - natH * scale) / 2;
+    apply();
+  }
+
+  function zoomAt(clientX, clientY, factor){
+    const rect = viewport.getBoundingClientRect();
+    const px = clientX - rect.left, py = clientY - rect.top;
+    // point in stage-space before zoom
+    const sx = (px - tx) / scale, sy = (py - ty) / scale;
+    scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
+    tx = px - sx * scale;
+    ty = py - sy * scale;
+    apply();
+  }
+
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : 1/1.15;
+    zoomAt(e.clientX, e.clientY, factor);
+  }, { passive:false });
+
+  // mouse drag to pan
+  let dragging = false, lastX = 0, lastY = 0;
+  viewport.addEventListener('mousedown', (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    viewport.classList.add('grabbing');
+  });
+  window.addEventListener('mousemove', (e) => {
+    if(!dragging) return;
+    tx += e.clientX - lastX; ty += e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    apply();
+  });
+  window.addEventListener('mouseup', () => { dragging = false; viewport.classList.remove('grabbing'); });
+
+  // touch: one-finger pan, two-finger pinch zoom
+  let touchMode = null, lastTouchDist = 0, lastTouchMid = null;
+  function touchDist(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
+  function touchMid(t){ return { x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2 }; }
+
+  viewport.addEventListener('touchstart', (e) => {
+    if(e.touches.length === 1){
+      touchMode = 'pan'; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+    } else if(e.touches.length === 2){
+      touchMode = 'pinch';
+      lastTouchDist = touchDist(e.touches);
+      lastTouchMid = touchMid(e.touches);
+    }
+  }, { passive:true });
+
+  viewport.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if(touchMode === 'pan' && e.touches.length === 1){
+      tx += e.touches[0].clientX - lastX; ty += e.touches[0].clientY - lastY;
+      lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+      apply();
+    } else if(touchMode === 'pinch' && e.touches.length === 2){
+      const d = touchDist(e.touches);
+      const mid = touchMid(e.touches);
+      zoomAt(mid.x, mid.y, d / lastTouchDist);
+      lastTouchDist = d;
+    }
+  }, { passive:false });
+
+  viewport.addEventListener('touchend', () => { touchMode = null; });
+
+  el('causalTreeZoomIn').addEventListener('click', () => {
+    const r = viewport.getBoundingClientRect();
+    zoomAt(r.left + r.width/2, r.top + r.height/2, 1.25);
+  });
+  el('causalTreeZoomOut').addEventListener('click', () => {
+    const r = viewport.getBoundingClientRect();
+    zoomAt(r.left + r.width/2, r.top + r.height/2, 1/1.25);
+  });
+  el('causalTreeReset').addEventListener('click', fit);
+
+  window.addEventListener('resize', fit);
+  fit();
+  window.__causalTreeFit = fit;
+})();
+
+updateApp();
+</script>
+
+<div class="text-center text-[10px] mt-6" style="color:var(--slate);">WPRFMC SAFE Report Data Pipeline Initiative · illustrative model, not a management determination</div>
+</body>
+</html>

@@ -1,0 +1,5 @@
+cumulative_interactions_on_trip,avg_distance_to_next_set_km,post_move_interaction_probability,n_trips,regulatory_limit_triggered,fleet_response
+0 takes (baseline sets),14.2,Baseline rate,,0,Standard set spacing
+1 interaction,15.5,No significant change,12.0,0,Minor adjustment; vessels typically continue
+3 interactions,22.4,Variable,7.0,0,"4 moved, 3 ended trip; movement does not guarantee zero takes"
+Trip limit met (≥5 LH or ≥2 LB),,0 % (mandatory stop),3.0,1,Return to port; 5-day stand-down

@@ -1,0 +1,6 @@
+gear_variable,fleet_adoption_pct,observed_interactions,interaction_cpue_per_1000_hooks,at_vessel_mortality_pct,finding
+Leader type: monofilament,100.0,823.0,0.1001,23.9,~41 % bite-off for sharks; reduced trailing line
+Leader type: wire,0.0,0.0,,,Phased out by regulation (2022)
+Bait: milkfish (vs. sanma),85.0,680.0,0.089,24.1,Lower cost; lower bigeye CPUE; potential effort shift
+Hook position: shallow (hooks 1–3 from float),,,,15.8,49 % of takes; oceanic whitetip and juvenile zone
+Hook position: deep (hooks ≥4 from float),,,,62.8,51 % of takes; adult leatherback diving zone

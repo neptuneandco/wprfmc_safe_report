@@ -1,0 +1,7 @@
+species_code,dps,size_class,pct_of_takes,at_vessel_mortality_pct,post_release_mortality_pct,est_total_mortalities_per_yr,population_trend_note
+LBT,West Pacific leatherback,juvenile (<115 cm SCL),35.0,62.8,14.0,9.3,Stable since 2017; historical model −6.0 %/yr
+LBT,West Pacific leatherback,subadult/adult,65.0,15.8,14.0,,
+LBT,East Pacific leatherback,all (5 % of takes by genetics),5.0,22.0,14.0,0.5,Decreasing −8.1 %/yr
+OWT,Oceanic whitetip shark,100–160 cm TL (mixed subadult/adult),100.0,23.9,3.2,1288.0,Increasing +6–7 %/yr (2025 WCPO assessment)
+LHT,N. Pacific loggerhead,juvenile (<60 cm SCL),58.0,4.0,18.0,,Nesting trend increasing (Japan)
+LHT,N. Pacific loggerhead,subadult/adult,42.0,2.0,18.0,,
